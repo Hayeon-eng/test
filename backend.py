@@ -1,50 +1,25 @@
+# backend.py
 from fastapi import FastAPI, Form
-from fastapi.responses import JSONResponse, FileResponse
+from fastapi.responses import FileResponse, JSONResponse
 from fastapi.staticfiles import StaticFiles
+import os
+import tempfile
 import pandas as pd
-import os, tempfile, asyncio, random, time
-from threading import Thread
+import threading
+import time
+import random
+from openai_config import openai_api_call  # RAG 기반 LLM 호출 함수
 
 app = FastAPI()
 
+# --- 정적 파일 경로 ---
 BASE_DIR = os.path.dirname(os.path.abspath(__file__))
 app.mount("/static", StaticFiles(directory=BASE_DIR), name="static")
 
-# 입력값 저장
-personas = []
-urls = []
-debate_history = []
-
-# --- AI 분석 함수 ---
-def analyze_content(persona, content, url_list):
-    # 실제 LLM API 호출 부분을 여기서 대체 가능
-    data_summary = f"[AI DATA 분석] {persona} 관점에서 {', '.join(url_list)} 분석 결과"
-    content_summary = f"[사람 CONTENT 분석] {persona} 특성 반영, 콘텐츠 시사점"
-    return data_summary, content_summary
-
-# --- 자동 토론 시뮬레이션 ---
-async def run_debate():
-    while True:
-        if not personas or not urls:
-            await asyncio.sleep(5)
-            continue
-
-        persona = random.choice(personas)
-        url = random.choice(urls)
-        # 단순 시뮬레이션 예시
-        statement = f"{persona} 생각: {url} 관련하여 이런 의견 있음"
-        counter = f"다른 참가자: {url} 이렇게 평가함, 너랑 다름"
-        debate_history.append({"statement": statement, "counter": counter})
-        # 20~60초마다
-        await asyncio.sleep(random.randint(20, 60))
-
-# --- 백그라운드 데몬 시작 ---
-def start_debate_loop():
-    loop = asyncio.new_event_loop()
-    asyncio.set_event_loop(loop)
-    loop.run_until_complete(run_debate())
-
-Thread(target=start_debate_loop, daemon=True).start()
+# --- In-Memory DB ---
+PERSONAS = []
+URLS = []
+DISCUSSIONS = []
 
 # --- 메인 페이지 ---
 @app.get("/")
@@ -54,33 +29,55 @@ async def root():
         return FileResponse(index_path)
     return JSONResponse({"detail": "index.html not found"}, status_code=404)
 
-# --- 페르소나 & URL 입력 ---
-@app.post("/add")
-async def add_persona_url(persona: str = Form(...), url: str = Form(...)):
-    if persona not in personas:
-        personas.append(persona)
-    if url not in urls:
-        urls.append(url)
-    return {"personas": personas, "urls": urls}
+# --- 페르소나/URL 등록 ---
+@app.post("/register")
+async def register(persona: str = Form(...), persona_desc: str = Form(...), url: str = Form(...)):
+    if persona not in [p['name'] for p in PERSONAS]:
+        PERSONAS.append({"name": persona, "desc": persona_desc})
+    if url not in URLS:
+        URLS.append(url)
+    return {"personas": PERSONAS, "urls": URLS}
 
-# --- 분석 ---
-@app.post("/analyze")
-async def analyze(persona: str = Form(...), content: str = Form(...)):
-    data_summary, content_summary = analyze_content(persona, content, urls)
-    return {
-        "data_summary": data_summary,
-        "content_summary": content_summary,
-        "debate_history": debate_history[-10:]  # 최신 10개만
-    }
+# --- 자동 토론 생성 ---
+def auto_discussion():
+    while True:
+        if PERSONAS and URLS:
+            persona = random.choice(PERSONAS)
+            url = random.choice(URLS)
+            # RAG 기반 분석 호출
+            msg = openai_api_call(persona['name'], persona['desc'], url)
+            DISCUSSIONS.append(msg)
+            # 최근 50개만 유지
+            if len(DISCUSSIONS) > 50:
+                DISCUSSIONS.pop(0)
+        time.sleep(random.randint(20, 60))
+
+threading.Thread(target=auto_discussion, daemon=True).start()
+
+# --- 토론 불러오기 ---
+@app.get("/discussions")
+async def get_discussions():
+    return {"discussions": DISCUSSIONS}
+
+# --- 데이터 분석 / 콘텐츠 분석 ---
+@app.get("/analysis")
+async def analysis():
+    if not URLS or not PERSONAS:
+        return JSONResponse({"detail": "No URLs or Personas registered"}, status_code=400)
+    
+    # 예시 분석
+    data_analysis = f"[AI DATA 분석] {', '.join(URLS)} 분석 완료"
+    content_analysis = f"[사람 CONTENT 분석] {', '.join([p['name'] for p in PERSONAS])} 시각 반영"
+    return {"data_analysis": data_analysis, "content_analysis": content_analysis}
 
 # --- Excel 다운로드 ---
 @app.get("/download_raw")
 async def download_raw():
     tmp_file = os.path.join(tempfile.gettempdir(), "raw_data.xlsx")
     df = pd.DataFrame({
-        "Persona": personas,
-        "URL": urls,
-        "Debate": [d['statement'] + ' / ' + d['counter'] for d in debate_history]
+        "Persona": [p['name'] for p in PERSONAS],
+        "Persona_Desc": [p['desc'] for p in PERSONAS],
+        "URLs": [', '.join(URLS)]
     })
     df.to_excel(tmp_file, index=False)
     return FileResponse(tmp_file, filename="raw_data.xlsx")
