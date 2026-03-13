@@ -1,25 +1,44 @@
-# backend.py
 from fastapi import FastAPI, Form
 from fastapi.responses import FileResponse, JSONResponse
 from fastapi.staticfiles import StaticFiles
 import os
 import tempfile
 import pandas as pd
-import threading
-import time
 import random
-from openai_config import openai_api_call  # RAG 기반 LLM 호출 함수
+import time
+import threading
 
 app = FastAPI()
 
-# --- 정적 파일 경로 ---
 BASE_DIR = os.path.dirname(os.path.abspath(__file__))
 app.mount("/static", StaticFiles(directory=BASE_DIR), name="static")
 
-# --- In-Memory DB ---
-PERSONAS = []
-URLS = []
-DISCUSSIONS = []
+# --- 저장된 페르소나/URL ---
+personas_urls = []
+
+# --- 자동 토론 로그 ---
+discussion_log = []
+
+# --- RAG 모킹 분석 ---
+def mock_rag_analysis(persona, urls):
+    data_analysis = f"[AI DATA 분석] {persona} 관점에서 " + ", ".join(urls) + " 분석 결과"
+    content_analysis = f"[사람 CONTENT 분석] {persona} 특성을 반영한 콘텐츠 시사점"
+    return data_analysis, content_analysis
+
+# --- 자동 토론 생성 ---
+def auto_discussion():
+    while True:
+        time.sleep(random.randint(20,60))
+        if personas_urls:
+            entry = random.choice(personas_urls)
+            persona, url = entry["persona"], random.choice(entry["urls"])
+            message = f"{persona}가 {url} 관련 의견: '{random.choice(['좋다', '좀 아쉽다', '관심 있음', '추천'])}'"
+            discussion_log.append(message)
+            # 최대 50개로 제한
+            if len(discussion_log) > 50:
+                discussion_log.pop(0)
+
+threading.Thread(target=auto_discussion, daemon=True).start()
 
 # --- 메인 페이지 ---
 @app.get("/")
@@ -31,53 +50,40 @@ async def root():
 
 # --- 페르소나/URL 등록 ---
 @app.post("/register")
-async def register(persona: str = Form(...), persona_desc: str = Form(...), url: str = Form(...)):
-    if persona not in [p['name'] for p in PERSONAS]:
-        PERSONAS.append({"name": persona, "desc": persona_desc})
-    if url not in URLS:
-        URLS.append(url)
-    return {"personas": PERSONAS, "urls": URLS}
+async def register(persona: str = Form(...), urls: str = Form(...)):
+    urls_list = [u.strip() for u in urls.split(",") if u.strip()]
+    # 중복 체크
+    for entry in personas_urls:
+        if entry["persona"] == persona:
+            for u in urls_list:
+                if u not in entry["urls"]:
+                    entry["urls"].append(u)
+            break
+    else:
+        personas_urls.append({"persona": persona, "urls": urls_list})
+    return {"status":"ok", "personas_urls": personas_urls}
 
-# --- 자동 토론 생성 ---
-def auto_discussion():
-    while True:
-        if PERSONAS and URLS:
-            persona = random.choice(PERSONAS)
-            url = random.choice(URLS)
-            # RAG 기반 분석 호출
-            msg = openai_api_call(persona['name'], persona['desc'], url)
-            DISCUSSIONS.append(msg)
-            # 최근 50개만 유지
-            if len(DISCUSSIONS) > 50:
-                DISCUSSIONS.pop(0)
-        time.sleep(random.randint(20, 60))
-
-threading.Thread(target=auto_discussion, daemon=True).start()
-
-# --- 토론 불러오기 ---
-@app.get("/discussions")
-async def get_discussions():
-    return {"discussions": DISCUSSIONS}
-
-# --- 데이터 분석 / 콘텐츠 분석 ---
-@app.get("/analysis")
-async def analysis():
-    if not URLS or not PERSONAS:
-        return JSONResponse({"detail": "No URLs or Personas registered"}, status_code=400)
-    
-    # 예시 분석
-    data_analysis = f"[AI DATA 분석] {', '.join(URLS)} 분석 완료"
-    content_analysis = f"[사람 CONTENT 분석] {', '.join([p['name'] for p in PERSONAS])} 시각 반영"
-    return {"data_analysis": data_analysis, "content_analysis": content_analysis}
+# --- 분석 ---
+@app.get("/analyze")
+async def analyze():
+    results = []
+    for entry in personas_urls:
+        persona, urls = entry["persona"], entry["urls"]
+        data_analysis, content_analysis = mock_rag_analysis(persona, urls)
+        results.append({
+            "persona": persona,
+            "urls": urls,
+            "data_analysis": data_analysis,
+            "content_analysis": content_analysis
+        })
+    return {"results": results, "discussion_log": discussion_log}
 
 # --- Excel 다운로드 ---
 @app.get("/download_raw")
 async def download_raw():
     tmp_file = os.path.join(tempfile.gettempdir(), "raw_data.xlsx")
-    df = pd.DataFrame({
-        "Persona": [p['name'] for p in PERSONAS],
-        "Persona_Desc": [p['desc'] for p in PERSONAS],
-        "URLs": [', '.join(URLS)]
-    })
+    df = pd.DataFrame([
+        {"Persona": e["persona"], "URLs": ", ".join(e["urls"])} for e in personas_urls
+    ])
     df.to_excel(tmp_file, index=False)
     return FileResponse(tmp_file, filename="raw_data.xlsx")
