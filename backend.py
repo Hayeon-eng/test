@@ -1,129 +1,106 @@
-from fastapi import FastAPI, WebSocket, WebSocketDisconnect, Form
-from fastapi.responses import FileResponse, JSONResponse
-from fastapi.staticfiles import StaticFiles
-import asyncio
-import json
-import os
-import tempfile
-import random
-
-BASE_DIR = os.path.dirname(os.path.abspath(__file__))
+from fastapi import FastAPI, Form
+from fastapi.responses import JSONResponse, FileResponse
+from fastapi.middleware.cors import CORSMiddleware
+import json, os, random, asyncio, tempfile
 
 app = FastAPI()
-app.mount("/static", StaticFiles(directory=BASE_DIR), name="static")
 
-# --- WebSocket 연결 관리 ---
-class ConnectionManager:
-    def __init__(self):
-        self.active_connections: list[WebSocket] = []
+# CORS 설정 (프론트에서 접근 가능하게)
+app.add_middleware(
+    CORSMiddleware,
+    allow_origins=["*"],
+    allow_methods=["*"],
+    allow_headers=["*"]
+)
 
-    async def connect(self, websocket: WebSocket):
-        await websocket.accept()
-        self.active_connections.append(websocket)
+BASE_DIR = os.path.dirname(os.path.abspath(__file__))
+PERSONA_FILE = os.path.join(BASE_DIR, "personas.json")
+URL_FILE = os.path.join(BASE_DIR, "urls.json")
 
-    def disconnect(self, websocket: WebSocket):
-        self.active_connections.remove(websocket)
+# --- 데이터 로드 ---
+def load_personas():
+    with open(PERSONA_FILE, "r", encoding="utf-8") as f:
+        return json.load(f)
 
-    async def broadcast(self, message: dict):
-        for connection in self.active_connections:
-            await connection.send_json(message)
+def load_urls():
+    with open(URL_FILE, "r", encoding="utf-8") as f:
+        return json.load(f)
 
-manager = ConnectionManager()
+# --- Mock RAG 기반 분석 ---
+def mock_analysis(persona, url):
+    """실제 RAG 없이 샘플 AI 분석 생성"""
+    return f"[{persona['nickname']} 관점] {url} 내용 기반 인사이트: 흥미로운 특징 발견됨."
 
-# --- Load personas & urls ---
-PERSONAS_FILE = os.path.join(BASE_DIR, "personas.json")
-URLS_FILE = os.path.join(BASE_DIR, "urls.json")
+# --- 자동 토론 상태 ---
+DISCUSSIONS = []
 
-def load_json(file_path):
-    if os.path.exists(file_path):
-        with open(file_path, "r", encoding="utf-8") as f:
-            return json.load(f)
-    return []
+async def auto_discussion_loop():
+    while True:
+        personas = load_personas()
+        urls = load_urls()
+        if not personas or not urls:
+            await asyncio.sleep(10)
+            continue
+        # 랜덤 페르소나 + URL 선택
+        persona = random.choice(personas)
+        url = random.choice(urls)
+        msg = mock_analysis(persona, url)
+        DISCUSSIONS.append({"persona": persona['nickname'], "url": url, "message": msg})
+        # 최대 100개 메시지 유지
+        if len(DISCUSSIONS) > 100:
+            DISCUSSIONS.pop(0)
+        await asyncio.sleep(random.randint(20,60))  # 20~60초마다 발화
 
-def save_json(file_path, data):
-    with open(file_path, "w", encoding="utf-8") as f:
-        json.dump(data, f, ensure_ascii=False, indent=2)
+# --- 백그라운드 자동 토론 시작 ---
+@app.on_event("startup")
+async def startup_event():
+    asyncio.create_task(auto_discussion_loop())
 
-personas = load_json(PERSONAS_FILE)
-urls = load_json(URLS_FILE)
+# --- 토론 조회 ---
+@app.get("/discussions")
+async def get_discussions():
+    return JSONResponse(DISCUSSIONS)
 
-# --- RAG mock 분석 ---
-def rag_mock_analysis(persona, url_list):
-    # 데이터 분석(자동, AI mock)
-    data_analysis = f"[AI DATA 분석] {persona['name']} 관점에서 {', '.join(url_list)} 분석 결과"
-    # 콘텐츠 분석(사람 관점 mock)
-    content_analysis = f"[사람 CONTENT 분석] {persona['description']} 기반, 콘텐츠 시사점"
-    return data_analysis, content_analysis
+# --- 페르소나 조회/추가 ---
+@app.get("/personas")
+async def get_personas():
+    return JSONResponse(load_personas())
 
-# --- WebSocket endpoint for auto discussion ---
-@app.websocket("/ws/discuss")
-async def websocket_endpoint(websocket: WebSocket):
-    await manager.connect(websocket)
-    try:
-        while True:
-            await asyncio.sleep(random.randint(20,60))  # 20~60초마다 발화
-            if not personas or not urls:
-                continue
-            persona = random.choice(personas)
-            url = random.choice(urls)
-            message = {
-                "persona": persona["name"],
-                "url": url,
-                "comment": f"{persona['name']} 시각에서 {url} 관련 의견: {random.choice(['좋다고 생각함','아쉽다고 생각함','중립적임'])}"
-            }
-            await manager.broadcast(message)
-    except WebSocketDisconnect:
-        manager.disconnect(websocket)
+@app.post("/personas")
+async def add_persona(nickname: str = Form(...), description: str = Form(...)):
+    personas = load_personas()
+    # 중복 체크
+    if any(p["nickname"] == nickname for p in personas):
+        return JSONResponse({"detail": "이미 존재하는 페르소나"}, status_code=400)
+    personas.append({"nickname": nickname, "description": description})
+    with open(PERSONA_FILE, "w", encoding="utf-8") as f:
+        json.dump(personas, f, ensure_ascii=False, indent=2)
+    return JSONResponse({"detail": "등록 완료"})
 
-# --- 메인 페이지 ---
-@app.get("/")
-async def root():
-    index_path = os.path.join(BASE_DIR, "index.html")
-    if os.path.exists(index_path):
-        return FileResponse(index_path)
-    return JSONResponse({"detail": "index.html not found"}, status_code=404)
+# --- URL 조회/추가 ---
+@app.get("/urls")
+async def get_urls():
+    return JSONResponse(load_urls())
 
-# --- Persona 추가 ---
-@app.post("/add_persona")
-async def add_persona(name: str = Form(...), description: str = Form(...)):
-    global personas
-    new_persona = {"name": name, "description": description}
-    if new_persona not in personas:
-        personas.append(new_persona)
-        save_json(PERSONAS_FILE, personas)
-    return {"personas": personas}
-
-# --- URL 추가 ---
-@app.post("/add_url")
+@app.post("/urls")
 async def add_url(url: str = Form(...)):
-    global urls
-    if url not in urls:
-        urls.append(url)
-        save_json(URLS_FILE, urls)
-    return {"urls": urls}
-
-# --- 분석 결과 (mock RAG) ---
-@app.post("/analyze")
-async def analyze():
-    results = []
-    for persona in personas:
-        data_res, content_res = rag_mock_analysis(persona, urls)
-        results.append({
-            "persona": persona["name"],
-            "data_analysis": data_res,
-            "content_analysis": content_res
-        })
-    return {"results": results}
+    urls = load_urls()
+    if url in urls:
+        return JSONResponse({"detail": "이미 존재하는 URL"}, status_code=400)
+    urls.append(url)
+    with open(URL_FILE, "w", encoding="utf-8") as f:
+        json.dump(urls, f, ensure_ascii=False, indent=2)
+    return JSONResponse({"detail": "URL 등록 완료"})
 
 # --- Excel 다운로드 ---
 @app.get("/download_raw")
 async def download_raw():
-    tmp_file = os.path.join(tempfile.gettempdir(), "raw_data.xlsx")
     import pandas as pd
+    tmp_file = os.path.join(tempfile.gettempdir(), "raw_data.xlsx")
     df = pd.DataFrame({
-        "Persona": [p["name"] for p in personas],
-        "Description": [p["description"] for p in personas],
-        "URLs": [", ".join(urls) for _ in personas]
+        "Persona": [d["persona"] for d in DISCUSSIONS],
+        "URL": [d["url"] for d in DISCUSSIONS],
+        "Message": [d["message"] for d in DISCUSSIONS]
     })
     df.to_excel(tmp_file, index=False)
     return FileResponse(tmp_file, filename="raw_data.xlsx")
