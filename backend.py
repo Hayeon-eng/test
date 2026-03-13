@@ -1,101 +1,121 @@
 from fastapi import FastAPI, Form
 from fastapi.responses import FileResponse, JSONResponse
-from fastapi.staticfiles import StaticFiles
-import asyncio, json, os, random, time
-from typing import List
+from fastapi.middleware.cors import CORSMiddleware
+import os, json, tempfile, random, time
+import asyncio
 
 app = FastAPI()
 
-# --- 정적 파일 서빙 ---
-app.mount("/", StaticFiles(directory=".", html=True), name="static")
+# CORS 허용 (프론트에서 바로 접근 가능하게)
+app.add_middleware(
+    CORSMiddleware,
+    allow_origins=["*"],
+    allow_methods=["*"],
+    allow_headers=["*"],
+)
 
-# --- 파일 경로 ---
-PERSONAS_FILE = "personas.json"
-URLS_FILE = "urls.json"
+BASE_DIR = os.path.dirname(os.path.abspath(__file__))
 
-# --- 메모리 저장 ---
-personas = []
-urls = []
-discussions = []
+# 데이터 파일
+PERSONAS_FILE = os.path.join(BASE_DIR, "personas.json")
+URLS_FILE = os.path.join(BASE_DIR, "urls.json")
 
-# --- 초기 JSON 로드 ---
-if os.path.exists(PERSONAS_FILE):
-    with open(PERSONAS_FILE, "r", encoding="utf-8") as f:
+# --- 초기 데이터 로딩 ---
+if not os.path.exists(PERSONAS_FILE):
+    personas = []
+    with open(PERSONAS_FILE, "w") as f:
+        json.dump(personas, f)
+else:
+    with open(PERSONAS_FILE, "r") as f:
         personas = json.load(f)
 
-if os.path.exists(URLS_FILE):
-    with open(URLS_FILE, "r", encoding="utf-8") as f:
+if not os.path.exists(URLS_FILE):
+    urls = []
+    with open(URLS_FILE, "w") as f:
+        json.dump(urls, f)
+else:
+    with open(URLS_FILE, "r") as f:
         urls = json.load(f)
 
-# --- Helper: Mock LLM 분석 (RAG 테스트용) ---
-def analyze_url_with_persona(persona: dict, url: str):
-    # 실제 RAG 대신 mock 분석
-    data_analysis = f"[AI DATA 분석] {persona['name']} 관점에서 {url} 분석 결과"
-    content_analysis = f"[사람 CONTENT 분석] {persona['description']} 반영, 콘텐츠 시사점"
-    return data_analysis, content_analysis
+# 토론 상태
+discussion_log = []
 
-# --- Helper: 토론 생성 ---
-def generate_discussion():
-    if not personas or not urls:
-        return
-    p1, p2 = random.sample(personas, 2) if len(personas) > 1 else (personas[0], personas[0])
-    url = random.choice(urls)
-    msg1 = f"{p1['name']}: 나는 {url} 관련해서 이렇게 생각함"
-    msg2 = f"{p2['name']}: 근데 나는 {url} 이렇게 평가함, 너랑 달라"
-    msg3 = f"{p1['name']}: 아, 그럴 수 있네. 하지만 {url} 보면…"
-    discussions.extend([msg1, msg2, msg3])
-    # 최대 100개 유지
-    if len(discussions) > 100:
-        discussions[:] = discussions[-100:]
+# --- 유틸 ---
+def save_json(file_path, data):
+    with open(file_path, "w") as f:
+        json.dump(data, f, ensure_ascii=False, indent=2)
 
-# --- 자동 토론 task ---
-async def auto_discuss():
+def mock_rag(persona, url):
+    # 테스트용 Mock 인사이트 생성
+    statements = [
+        f"{persona['name']} 시각에서 {url}는 혁신적이라고 생각함.",
+        f"{persona['name']}는 {url}의 디자인이 마음에 든다고 평가함.",
+        f"{persona['name']}는 {url}의 기능보다 브랜드 충성도가 중요하다고 느낌.",
+        f"{persona['name']}는 {url}에 대해 다른 의견이 있지만, 일부는 동의함."
+    ]
+    return random.choice(statements)
+
+async def auto_discussion():
     while True:
-        generate_discussion()
-        await asyncio.sleep(random.randint(20,60))
+        await asyncio.sleep(20)  # 20초마다 자동 토론
+        if not personas or not urls:
+            continue
+        p = random.choice(personas)
+        u = random.choice(urls)
+        msg = mock_rag(p, u)
+        discussion_log.append({"persona": p["name"], "url": u, "message": msg})
+        # 최근 50개만 유지
+        if len(discussion_log) > 50:
+            discussion_log.pop(0)
 
-# --- FastAPI startup 이벤트 ---
-@app.on_event("startup")
-async def startup_event():
-    asyncio.create_task(auto_discuss())
+# --- 프론트 노출 ---
+@app.get("/")
+async def root():
+    index_path = os.path.join(BASE_DIR, "index.html")
+    if os.path.exists(index_path):
+        return FileResponse(index_path)
+    return JSONResponse({"detail": "index.html not found"}, status_code=404)
 
-# --- API: 페르소나 등록 ---
+# --- 페르소나 등록 ---
 @app.post("/add_persona")
 async def add_persona(name: str = Form(...), description: str = Form(...)):
-    for p in personas:
-        if p['name'] == name:
-            return {"detail": "이미 등록된 페르소나입니다."}
+    global personas
+    if any(p["name"] == name for p in personas):
+        return {"status": "exist"}
     persona = {"name": name, "description": description}
     personas.append(persona)
-    with open(PERSONAS_FILE, "w", encoding="utf-8") as f:
-        json.dump(personas, f, ensure_ascii=False, indent=2)
-    return {"detail": "등록 완료", "persona": persona}
+    save_json(PERSONAS_FILE, personas)
+    return {"status": "ok", "persona": persona}
 
-# --- API: URL 등록 ---
+# --- URL 등록 ---
 @app.post("/add_url")
 async def add_url(url: str = Form(...)):
+    global urls
     if url in urls:
-        return {"detail": "이미 등록된 URL입니다."}
+        return {"status": "exist"}
     urls.append(url)
-    with open(URLS_FILE, "w", encoding="utf-8") as f:
-        json.dump(urls, f, ensure_ascii=False, indent=2)
-    return {"detail": "등록 완료", "url": url}
+    save_json(URLS_FILE, urls)
+    return {"status": "ok", "url": url}
 
-# --- API: 현재 상태 ---
+# --- 현재 상태 반환 (토론 + 등록 데이터) ---
 @app.get("/state")
 async def state():
-    # 분석 결과 포함
-    data_results = []
-    content_results = []
-    for p in personas:
-        for u in urls:
-            d, c = analyze_url_with_persona(p, u)
-            data_results.append(d)
-            content_results.append(c)
     return {
         "personas": personas,
         "urls": urls,
-        "discussions": discussions[-20:],  # 최근 20개만
-        "data_analysis": data_results,
-        "content_analysis": content_results
+        "discussion_log": discussion_log[-20:]  # 최근 20개
     }
+
+# --- Excel 다운로드 ---
+@app.get("/download_raw")
+async def download_raw():
+    import pandas as pd
+    tmp_file = os.path.join(tempfile.gettempdir(), "raw_data.xlsx")
+    df = pd.DataFrame(discussion_log)
+    df.to_excel(tmp_file, index=False)
+    return FileResponse(tmp_file, filename="raw_data.xlsx")
+
+# --- 자동 토론 시작 ---
+@app.on_event("startup")
+async def startup_event():
+    asyncio.create_task(auto_discussion())
