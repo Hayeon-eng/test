@@ -1,89 +1,81 @@
-from fastapi import FastAPI, Form
-from fastapi.responses import FileResponse, JSONResponse
-from fastapi.staticfiles import StaticFiles
-import os
-import tempfile
-import pandas as pd
-import random
-import time
-import threading
+<!DOCTYPE html>
+<html lang="ko">
+<head>
+<meta charset="UTF-8">
+<title>RAG 토론 테스트</title>
+<style>
+body { font-family: Arial; margin: 20px; }
+input, textarea { width: 300px; margin-bottom: 10px; }
+button { margin-top: 10px; }
+#discussion { border:1px solid #ccc; padding:10px; height:200px; overflow-y:scroll; }
+.analysis { border:1px solid #aaa; margin-top:10px; padding:10px; }
+</style>
+</head>
+<body>
+<h2>페르소나 + URL 입력</h2>
+<input id="persona" placeholder="Persona 설명">
+<textarea id="urls" placeholder="URL 여러개 , 로 구분"></textarea><br>
+<button onclick="register()">등록</button>
 
-app = FastAPI()
+<h3>등록된 페르소나/URL</h3>
+<select id="persona_list" size="5" style="width:400px;"></select>
 
-BASE_DIR = os.path.dirname(os.path.abspath(__file__))
-app.mount("/static", StaticFiles(directory=BASE_DIR), name="static")
+<h3>분석 결과</h3>
+<div id="analysis"></div>
 
-# --- 저장된 페르소나/URL ---
-personas_urls = []
+<h3>자동 토론</h3>
+<div id="discussion"></div>
 
-# --- 자동 토론 로그 ---
-discussion_log = []
+<script>
+async function register(){
+    let persona = document.getElementById('persona').value;
+    let urls = document.getElementById('urls').value;
+    if(!persona || !urls) return alert("둘다 입력 필요");
+    await fetch("/register", {
+        method:"POST",
+        body:new URLSearchParams({persona, urls})
+    });
+    document.getElementById('persona').value='';
+    document.getElementById('urls').value='';
+    loadPersonas();
+}
 
-# --- RAG 모킹 분석 ---
-def mock_rag_analysis(persona, urls):
-    data_analysis = f"[AI DATA 분석] {persona} 관점에서 " + ", ".join(urls) + " 분석 결과"
-    content_analysis = f"[사람 CONTENT 분석] {persona} 특성을 반영한 콘텐츠 시사점"
-    return data_analysis, content_analysis
+async function loadPersonas(){
+    let res = await fetch("/analyze");
+    let data = await res.json();
+    let sel = document.getElementById('persona_list');
+    sel.innerHTML='';
+    data.results.forEach(e=>{
+        let opt = document.createElement('option');
+        opt.text = `${e.persona} - ${e.urls.join(', ')}`;
+        sel.add(opt);
+    });
+    displayAnalysis(data.results);
+    displayDiscussion(data.discussion_log);
+}
 
-# --- 자동 토론 생성 ---
-def auto_discussion():
-    while True:
-        time.sleep(random.randint(20,60))
-        if personas_urls:
-            entry = random.choice(personas_urls)
-            persona, url = entry["persona"], random.choice(entry["urls"])
-            message = f"{persona}가 {url} 관련 의견: '{random.choice(['좋다', '좀 아쉽다', '관심 있음', '추천'])}'"
-            discussion_log.append(message)
-            # 최대 50개로 제한
-            if len(discussion_log) > 50:
-                discussion_log.pop(0)
+function displayAnalysis(results){
+    let container = document.getElementById('analysis');
+    container.innerHTML='';
+    results.forEach(e=>{
+        let div = document.createElement('div');
+        div.className='analysis';
+        div.innerHTML=`<strong>${e.persona}</strong><br>
+        <em>Data 분석:</em> ${e.data_analysis}<br>
+        <em>Content 분석:</em> ${e.content_analysis}`;
+        container.appendChild(div);
+    });
+}
 
-threading.Thread(target=auto_discussion, daemon=True).start()
+function displayDiscussion(log){
+    let div = document.getElementById('discussion');
+    div.innerHTML = log.map(l=>`<div>${l}</div>`).join('');
+    div.scrollTop = div.scrollHeight;
+}
 
-# --- 메인 페이지 ---
-@app.get("/")
-async def root():
-    index_path = os.path.join(BASE_DIR, "index.html")
-    if os.path.exists(index_path):
-        return FileResponse(index_path)
-    return JSONResponse({"detail": "index.html not found"}, status_code=404)
-
-# --- 페르소나/URL 등록 ---
-@app.post("/register")
-async def register(persona: str = Form(...), urls: str = Form(...)):
-    urls_list = [u.strip() for u in urls.split(",") if u.strip()]
-    # 중복 체크
-    for entry in personas_urls:
-        if entry["persona"] == persona:
-            for u in urls_list:
-                if u not in entry["urls"]:
-                    entry["urls"].append(u)
-            break
-    else:
-        personas_urls.append({"persona": persona, "urls": urls_list})
-    return {"status":"ok", "personas_urls": personas_urls}
-
-# --- 분석 ---
-@app.get("/analyze")
-async def analyze():
-    results = []
-    for entry in personas_urls:
-        persona, urls = entry["persona"], entry["urls"]
-        data_analysis, content_analysis = mock_rag_analysis(persona, urls)
-        results.append({
-            "persona": persona,
-            "urls": urls,
-            "data_analysis": data_analysis,
-            "content_analysis": content_analysis
-        })
-    return {"results": results, "discussion_log": discussion_log}
-
-# --- Excel 다운로드 ---
-@app.get("/download_raw")
-async def download_raw():
-    tmp_file = os.path.join(tempfile.gettempdir(), "raw_data.xlsx")
-    df = pd.DataFrame([
-        {"Persona": e["persona"], "URLs": ", ".join(e["urls"])} for e in personas_urls
-    ])
-    df.to_excel(tmp_file, index=False)
-    return FileResponse(tmp_file, filename="raw_data.xlsx")
+// 5초마다 새로고침
+setInterval(loadPersonas, 5000);
+loadPersonas();
+</script>
+</body>
+</html>
