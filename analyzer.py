@@ -1,37 +1,78 @@
-from typing import Dict, Any
+from fastapi import FastAPI, Request
+from fastapi.middleware.cors import CORSMiddleware
+from fastapi.responses import JSONResponse, FileResponse
+from parser import parse_url, parse_youtube
+from analyzer import analyze_content, analyze_comments
+import pandas as pd
 
-def analyze_content(content: str, persona: Dict[str,str]) -> Dict[str, Any]:
-    """
-    - 데이터 관점 인사이트 (AI)
-    - 콘텐츠 관점 인사이트 (페르소나 의견)
-    - 브랜드 언급 / sentiment
-    - 토픽 클러스터
-    - AI citation probability
-    - AEO score
-    - 할루시네이션 방지
-    """
-    content_summary = f"[{persona['name']}({persona['trait']}) 의견] 읽기 쉬움, 일부 문단 길어 개선 필요, AEO 관점에서 링크 구조 개선 추천."
+app = FastAPI()
 
-    data_insights = "[AI 분석] schema 적절, H태그 계층 OK, AEO 0.72 → 개선 가능"
+app.add_middleware(
+    CORSMiddleware,
+    allow_origins=["*"],
+    allow_methods=["*"],
+    allow_headers=["*"],
+)
 
-    return {
-        "content_summary": content_summary,
-        "data_insights": data_insights,
-        "brand_mentions":["BrandA","BrandB"],
-        "brand_sentiment":{"BrandA":"Positive","BrandB":"Neutral"},
-        "topic_clusters":["Topic1","Topic2"],
-        "ai_citation_probability":0.85,
-        "aeo_score":0.72
+comment_log = []
+rawData = {}
+
+# 테스트 모드 (과금 없음)
+TEST_MODE = True
+
+@app.post("/analyze")
+async def analyze(request: Request):
+    global rawData
+    data = await request.json()
+    content_type = data.get("type")
+    content_input = data.get("content")
+    persona = data.get("persona", {"name":"Default","trait":"neutral"})
+
+    if content_type == "url":
+        parsed = parse_url(content_input)
+        combined_content = str(parsed)
+    elif content_type == "youtube":
+        parsed = parse_youtube(content_input)
+        combined_content = parsed.get("transcript","")
+    else:
+        combined_content = content_input
+
+    analysis_result = analyze_content(combined_content, persona)
+
+    comment_analysis = analyze_comments(comment_log)
+
+    rawData = {
+        "parsed": combined_content,
+        "analysis": analysis_result,
+        "comments": comment_analysis
     }
 
-def analyze_comments(comments: list) -> list:
-    """각 댓글에 대해 감정/키워드/요약 추가"""
-    analyzed = []
-    for c in comments:
-        analyzed.append({
-            "text": c,
-            "sentiment": "Positive" if "좋" in c else "Neutral",
-            "keywords": [w for w in c.split() if len(w)>1],
-            "summary": c[:20]+"..." if len(c)>20 else c
-        })
-    return analyzed
+    return JSONResponse(rawData)
+
+@app.post("/comment")
+async def add_comment(request: Request):
+    global rawData
+    data = await request.json()
+    comment = data.get("comment")
+    if comment:
+        comment_log.append(comment)
+    comment_analysis = analyze_comments(comment_log)
+    rawData["comments"] = comment_analysis
+    return JSONResponse({"comments": comment_analysis})
+
+@app.get("/download_raw")
+async def download_raw():
+    global rawData
+    # Excel 변환
+    df_content = pd.DataFrame([{
+        "Data_Insights": rawData.get("analysis", {}).get("data_insights",""),
+        "Content_Summary": rawData.get("analysis", {}).get("content_summary",""),
+        "Brand_Mentions": ",".join(rawData.get("analysis", {}).get("brand_mentions",[])),
+        "AEO_Score": rawData.get("analysis", {}).get("aeo_score","")
+    }])
+    df_comments = pd.DataFrame(rawData.get("comments",[]))
+    file_path = "raw_data.xlsx"
+    with pd.ExcelWriter(file_path) as writer:
+        df_content.to_excel(writer, sheet_name="Analysis", index=False)
+        df_comments.to_excel(writer, sheet_name="Comments", index=False)
+    return FileResponse(file_path, media_type='application/vnd.openxmlformats-officedocument.spreadsheetml.sheet', filename="raw_data.xlsx")
