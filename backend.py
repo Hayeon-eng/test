@@ -1,16 +1,21 @@
-# backend.py
-from fastapi import FastAPI, Form
+from fastapi import FastAPI, WebSocket, Form
 from fastapi.responses import FileResponse, JSONResponse
 from fastapi.staticfiles import StaticFiles
-import pandas as pd
-import os
-import tempfile
+import asyncio, random, os, tempfile, pandas as pd
 
 app = FastAPI()
-
-# --- 정적 파일 경로 (index.html 포함) ---
 BASE_DIR = os.path.dirname(os.path.abspath(__file__))
 app.mount("/static", StaticFiles(directory=BASE_DIR), name="static")
+
+# --- 페르소나 & URL 저장 ---
+personas = []
+urls = []
+
+# --- 토론 로그 ---
+discussion_log = []
+
+# --- WebSocket 연결 ---
+connected_websockets = []
 
 # --- 메인 페이지 ---
 @app.get("/")
@@ -20,57 +25,82 @@ async def root():
         return FileResponse(index_path)
     return JSONResponse({"detail": "index.html not found"}, status_code=404)
 
-# --- 페르소나 입력 & URL 등록 ---
-# 토론 라운드별 무한 발화용
-ROUNDS = []
+# --- 페르소나 입력 ---
+@app.post("/add_persona")
+async def add_persona(persona: str = Form(...)):
+    if persona not in personas:
+        personas.append(persona)
+    return {"personas": personas}
 
-@app.post("/add_topic")
-async def add_topic(persona: str = Form(...), persona_desc: str = Form(...), urls: str = Form(...)):
-    # urls는 쉼표로 구분
-    topic = {
-        "persona": persona,
-        "description": persona_desc,
-        "urls": [u.strip() for u in urls.split(",")],
-        "rounds": []
-    }
-    ROUNDS.append(topic)
-    return {"status": "ok", "topics": len(ROUNDS)}
+# --- URL 입력 ---
+@app.post("/add_url")
+async def add_url(url: str = Form(...)):
+    if url not in urls:
+        urls.append(url)
+    return {"urls": urls}
 
-# --- 토론 시뮬레이션 ---
-@app.get("/simulate_rounds")
-async def simulate_rounds():
-    results = []
-    for topic in ROUNDS:
-        data_analysis = f"[AI DATA 분석] {topic['persona']} 관점에서 {', '.join(topic['urls'])} 분석 결과"
-        content_analysis = f"[사람 CONTENT 분석] {topic['description']} 반영, 콘텐츠 시사점"
-        # 라운드별 발화 예시
-        discussion = [
-            f"{topic['persona']}: 나는 {topic['urls'][0]} 관련해서 이렇게 생각함",
-            f"다른 참가자: 근데 나는 {topic['urls'][0]} 이렇게 평가함, 너랑 다름",
-            f"{topic['persona']}: 아, 그럴 수 있네. 그렇지만 {topic['urls'][1]} 보면…"
-        ]
-        topic["rounds"].append({
-            "data": data_analysis,
-            "content": content_analysis,
-            "discussion": discussion
-        })
-        results.append(topic["rounds"][-1])
-    return {"results": results}
+# --- Data/Content 분석 + 토론 라운드 ---
+async def generate_round():
+    while True:
+        if not personas or not urls:
+            await asyncio.sleep(5)
+            continue
+        
+        persona = random.choice(personas)
+        url = random.choice(urls)
+        
+        # --- 샘플 분석 ---
+        data_analysis = f"[AI DATA 분석] {persona} 관점에서 {url} 분석 완료"
+        content_analysis = f"[사람 CONTENT 분석] {persona} 관점에서 시사점 요약"
+        
+        # --- 샘플 토론 발화 ---
+        prev = discussion_log[-1]["text"] if discussion_log else ""
+        debate_text = f"{persona}: {url} 관련, 내 의견은 '{prev} + 새로운 인사이트' 입니다."
+        
+        round_data = {
+            "persona": persona,
+            "url": url,
+            "data_analysis": data_analysis,
+            "content_analysis": content_analysis,
+            "text": debate_text
+        }
+        discussion_log.append(round_data)
+        
+        # --- WebSocket 브로드캐스트 ---
+        for ws in connected_websockets:
+            await ws.send_json(round_data)
+        
+        await asyncio.sleep(random.randint(20, 60))  # 20~60초 간격
+
+# --- WebSocket 연결 ---
+@app.websocket("/ws")
+async def websocket_endpoint(ws: WebSocket):
+    await ws.accept()
+    connected_websockets.append(ws)
+    
+    # 접속 시 기존 로그 전송
+    for msg in discussion_log:
+        await ws.send_json(msg)
+    
+    try:
+        while True:
+            await ws.receive_text()  # 클라이언트 유지용
+    except:
+        connected_websockets.remove(ws)
 
 # --- Excel 다운로드 ---
 @app.get("/download_raw")
 async def download_raw():
     tmp_file = os.path.join(tempfile.gettempdir(), "raw_data.xlsx")
-    data = []
-    for topic in ROUNDS:
-        for r in topic["rounds"]:
-            data.append({
-                "Persona": topic["persona"],
-                "Persona_desc": topic["description"],
-                "URLs": ", ".join(topic["urls"]),
-                "Data_summary": r["data"],
-                "Content_summary": r["content"]
-            })
-    df = pd.DataFrame(data)
+    df = pd.DataFrame({
+        "Persona": personas or ["샘플 페르소나"],
+        "URL": urls or ["샘플 URL"],
+        "Discussion": [d["text"] for d in discussion_log] or ["샘플 토론"]
+    })
     df.to_excel(tmp_file, index=False)
     return FileResponse(tmp_file, filename="raw_data.xlsx")
+
+# --- 백그라운드 자동 라운드 시작 ---
+@app.on_event("startup")
+async def startup_event():
+    asyncio.create_task(generate_round())
