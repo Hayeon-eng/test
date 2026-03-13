@@ -1,109 +1,37 @@
 <!DOCTYPE html>
-<html lang="en">
+<html lang="ko">
 <head>
 <meta charset="UTF-8">
-<title>AI Insight Tool v1.3</title>
+<title>URL 분석기</title>
 <style>
-body { font-family: Arial; margin: 20px; }
-.container { display: flex; gap: 20px; }
-.left { flex: 2; }
-.right { flex: 1; border-left: 1px solid #ccc; padding-left: 10px; }
-textarea { width: 100%; height: 80px; }
-button { margin-top: 5px; }
-.comment-box { margin-top: 10px; border-top: 1px solid #eee; padding-top: 5px; }
-.summary-section { margin-top: 10px; background: #f9f9f9; padding: 10px; }
+body { font-family: Arial; margin: 30px; }
+#container { max-width: 900px; margin: auto; }
+input, textarea { width: 100%; padding: 8px; margin: 5px 0; }
+button { padding: 10px 20px; margin-top: 10px; }
+#comments { margin-top: 20px; border-top: 1px solid #ccc; padding-top: 10px; }
+.comment { border-bottom: 1px solid #ddd; padding: 5px 0; }
+.analysis { background: #f0f0f0; padding: 5px; margin: 5px 0; white-space: pre-wrap; }
 </style>
 </head>
 <body>
+<div id="container">
+<h1>URL 분석기</h1>
+<label>URL:</label>
+<input type="text" id="url" placeholder="URL 입력">
+<label>페르소나:</label>
+<input type="text" id="persona" placeholder="예: 분석가, UX 전문가">
+<label>코멘트 (선택):</label>
+<textarea id="comment" rows="2"></textarea>
+<button onclick="submitAnalysis()">분석하기</button>
+<button id="downloadBtn" onclick="downloadRaw()">RAW DATA DOWNLOAD</button>
 
-<h2>AI Insight Tool v1.3</h2>
+<h2>분석 결과</h2>
+<div id="analysis"></div>
 
-<div class="container">
-  <div class="left">
-    <label>Input type:</label>
-    <select id="inputType">
-      <option value="text">Text</option>
-      <option value="url">URL</option>
-      <option value="youtube">YouTube</option>
-    </select>
-
-    <textarea id="inputContent" placeholder="Enter text, URL, or YouTube link"></textarea>
-
-    <h4>Persona</h4>
-    <input type="text" id="personaName" placeholder="Name">
-    <input type="text" id="personaPersonality" placeholder="Personality">
-
-    <button onclick="analyzeContent()">Analyze</button>
-    <button id="downloadBtn" onclick="window.location.href='https://test-76hq.onrender.com/download_raw'">RAW DATA DOWNLOAD</button>
-
-    <div class="summary-section">
-      <h4>Analysis Summary</h4>
-      <div id="dataInsight"></div>
-      <div id="contentInsight"></div>
-    </div>
-
-    <div class="comment-box">
-      <h4>Comments</h4>
-      <textarea id="commentInput" placeholder="Add a comment"></textarea>
-      <button onclick="addComment()">Add Comment</button>
-      <div id="commentsList"></div>
-    </div>
-  </div>
-
-  <div class="right">
-    <h4>Comments Overview</h4>
-    <div id="commentSummary"></div>
-  </div>
+<h2>댓글 히스토리</h2>
+<div id="comments"></div>
 </div>
 
-<script>
-const renderURL = "https://test-76hq.onrender.com";
-
-async function analyzeContent() {
-  const type = document.getElementById("inputType").value;
-  const content = document.getElementById("inputContent").value;
-  const persona = {
-    name: document.getElementById("personaName").value,
-    personality: document.getElementById("personaPersonality").value
-  };
-
-  const response = await fetch(renderURL + "/analyze", {
-    method: "POST",
-    headers: {"Content-Type": "application/json"},
-    body: JSON.stringify({type, content, persona})
-  });
-  const data = await response.json();
-  document.getElementById("dataInsight").innerText = data.analysis.data_insight;
-  document.getElementById("contentInsight").innerText = data.analysis.content_insight;
-  updateCommentsUI(data.comments);
-}
-
-async function addComment() {
-  const comment = document.getElementById("commentInput").value;
-  if(!comment) return;
-  const response = await fetch(renderURL + "/comment", {
-    method: "POST",
-    headers: {"Content-Type": "application/json"},
-    body: JSON.stringify({comment})
-  });
-  const data = await response.json();
-  updateCommentsUI(data.comments);
-  document.getElementById("commentInput").value = "";
-}
-
-function updateCommentsUI(comments) {
-  const list = document.getElementById("commentsList");
-  const summary = document.getElementById("commentSummary");
-  list.innerHTML = "";
-  summary.innerHTML = "";
-  comments.forEach((c,i)=>{
-    const el = document.createElement("div");
-    el.innerText = `${i+1}. ${c.summary} [${c.sentiment}]`;
-    list.appendChild(el);
-  });
-  summary.innerHTML = `Total Comments: ${comments.length}`;
-}
-</script>
-
+<script src="script.js"></script>
 </body>
 </html>
