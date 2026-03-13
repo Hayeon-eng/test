@@ -1,14 +1,14 @@
+# backend.py
 from fastapi import FastAPI, Form
 from fastapi.responses import FileResponse, JSONResponse
 from fastapi.staticfiles import StaticFiles
-import pandas as pd
 import os
 import tempfile
-import asyncio
+import random
 
 app = FastAPI()
 
-# --- 정적 파일 ---
+# --- 정적 파일 경로 ---
 BASE_DIR = os.path.dirname(os.path.abspath(__file__))
 app.mount("/static", StaticFiles(directory=BASE_DIR), name="static")
 
@@ -20,45 +20,67 @@ async def root():
         return FileResponse(index_path)
     return JSONResponse({"detail": "index.html not found"}, status_code=404)
 
-# --- 라운드별 토론 데이터 저장 (메모리, 후에 Excel로) ---
-rounds_data = []
+# --- 테스트용 LLM 토론 시뮬레이션 ---
+class Persona:
+    def __init__(self, name, traits):
+        self.name = name
+        self.traits = traits
 
-# --- 페르소나 + URL 입력 시 자동 토론 ---
-@app.post("/talk")
-async def talk(persona: str = Form(...), urls: str = Form(...)):
-    """
-    persona: '애플 팬, Gen Z, 디자인 중시' 등 자유 입력
-    urls: 'apple.com, samsung.com' 콤마 구분
-    """
-    url_list = [u.strip() for u in urls.split(",") if u.strip()]
-    new_round = []
-    summary = f"요약: {persona} 시각에서 {len(url_list)}개 URL 토론 시작"
+class Topic:
+    def __init__(self, url, content):
+        self.url = url
+        self.content = content
+
+# 메모리 기반 간단 시뮬레이션
+personas = []
+topics = []
+
+def generate_insight(persona: Persona, topic: Topic):
+    # 무작위 토론 인사이트 예시
+    starters = [
+        f"{persona.name} 생각: '{topic.url}' 관련해서 중요한 건 {random.choice(['사용자 경험', '가격 전략', '브랜드 이미지'])}이라고 봐요.",
+        f"{persona.name} 의견: {topic.content[:30]}... 부분이 특히 흥미롭네요.",
+        f"{persona.name} 분석: {random.choice(['장점과 단점을 모두 고려', '경쟁사와 비교', '트렌드 반영'])} 필요합니다."
+    ]
+    rebuttals = [
+        f"{persona.name} 반박: '{topic.url}' 부분은 {random.choice(['조금 과장되었음', '데이터 부족', '다른 시각 필요'])} 같아요.",
+        f"{persona.name} 의견: 전 {random.choice(['동의', '부분 동의', '다르게 생각'])}합니다."
+    ]
+    return starters + rebuttals
+
+@app.post("/add_persona")
+async def add_persona(name: str = Form(...), traits: str = Form(...)):
+    persona = Persona(name, traits)
+    personas.append(persona)
+    return {"message": f"페르소나 '{name}' 추가 완료!", "traits": traits}
+
+@app.post("/add_topic")
+async def add_topic(url: str = Form(...), content: str = Form(...)):
+    topic = Topic(url, content)
+    topics.append(topic)
+    return {"message": f"토픽 '{url}' 추가 완료!", "content": content}
+
+@app.get("/simulate_discussion")
+async def simulate_discussion():
+    if not personas or not topics:
+        return {"detail": "페르소나 또는 토픽이 없습니다."}
     
-    # 간단 예시 발화 (실제 LLM 연동 가능)
-    for url in url_list:
-        new_round.append({
-            "url": url,
-            "persona": persona,
-            "comment": f"{persona} 시각에서 {url} 분석: 핵심 포인트 논의",
-            "insight": "디자인/가격/UX 등 관점에서 비교 가능"
-        })
-    rounds_data.append(new_round)
-    return {"summary": summary, "round": new_round}
+    discussion = []
+    for topic in topics:
+        for persona in personas:
+            discussion.extend(generate_insight(persona, topic))
+    
+    return {"discussion": discussion}
 
-# --- Excel 다운로드 ---
+# --- Excel 다운로드 (예시) ---
 @app.get("/download_raw")
 async def download_raw():
     tmp_file = os.path.join(tempfile.gettempdir(), "raw_data.xlsx")
-    all_rows = []
-    for r, round_ in enumerate(rounds_data, 1):
-        for entry in round_:
-            all_rows.append({
-                "Round": r,
-                "URL": entry["url"],
-                "Persona": entry["persona"],
-                "Comment": entry["comment"],
-                "Insight": entry["insight"]
-            })
-    df = pd.DataFrame(all_rows)
+    import pandas as pd
+    df = pd.DataFrame({
+        "Persona": [p.name for p in personas],
+        "Traits": [p.traits for p in personas],
+        "Topics": [t.url for t in topics],
+    })
     df.to_excel(tmp_file, index=False)
     return FileResponse(tmp_file, filename="raw_data.xlsx")
