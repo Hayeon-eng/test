@@ -1,103 +1,87 @@
 <!DOCTYPE html>
-<html>
+<html lang="ko">
 <head>
 <meta charset="UTF-8">
-<title>AI 자동 토론 플랫폼</title>
+<title>자동 토론 플랫폼</title>
 <style>
 body { font-family: Arial; padding: 20px; }
-h2 { margin-top: 20px; }
-textarea { width: 100%; height: 80px; }
-button { margin-top: 10px; }
-ul { list-style-type: none; padding: 0; }
-li { margin-bottom: 5px; }
+section { margin-bottom: 20px; }
+textarea { width: 100%; height: 60px; }
+button { margin-top: 5px; }
+#discussion { border: 1px solid #ccc; padding: 10px; height: 300px; overflow-y: scroll; }
 </style>
 </head>
 <body>
 <h1>자동 토론 플랫폼</h1>
 
+<section>
 <h2>페르소나 등록</h2>
-<input type="text" id="nickname" placeholder="닉네임">
-<input type="text" id="description" placeholder="설명">
+<input type="text" id="persona_name" placeholder="닉네임">
+<input type="text" id="persona_desc" placeholder="설명">
 <button onclick="addPersona()">등록</button>
+<ul id="persona_list"></ul>
+</section>
 
+<section>
 <h2>URL 등록</h2>
-<input type="text" id="url" placeholder="URL">
-<button onclick="addUrl()">등록</button>
+<input type="text" id="url_input" placeholder="https://">
+<button onclick="addURL()">등록</button>
+<ul id="url_list"></ul>
+</section>
 
-<h2>등록된 페르소나</h2>
-<ul id="personaList"></ul>
-
-<h2>등록된 URL</h2>
-<ul id="urlList"></ul>
-
+<section>
 <h2>토론</h2>
-<ul id="discussionList"></ul>
+<div id="discussion"></div>
+</section>
 
 <script>
-async function fetchPersonas() {
-    let res = await fetch("/personas");
+async function fetchState() {
+    let res = await fetch("/state");
     let data = await res.json();
-    const ul = document.getElementById("personaList");
-    ul.innerHTML = "";
-    data.forEach(p => {
+    // 페르소나/URL 리스트
+    let persona_ul = document.getElementById("persona_list");
+    persona_ul.innerHTML = "";
+    data.personas.forEach(p => {
         let li = document.createElement("li");
-        li.textContent = p.nickname + " : " + p.description;
-        ul.appendChild(li);
+        li.textContent = p.name + " (" + p.description + ")";
+        persona_ul.appendChild(li);
     });
+    let url_ul = document.getElementById("url_list");
+    url_ul.innerHTML = "";
+    data.urls.forEach(u => {
+        let li = document.createElement("li");
+        li.textContent = u;
+        url_ul.appendChild(li);
+    });
+    // 토론
+    let disc = document.getElementById("discussion");
+    disc.innerHTML = "";
+    data.discussion_log.forEach(d => {
+        let p = document.createElement("p");
+        p.textContent = `[${d.persona}] ${d.url} → ${d.message}`;
+        disc.appendChild(p);
+    });
+    disc.scrollTop = disc.scrollHeight;
 }
 
 async function addPersona() {
-    let nickname = document.getElementById("nickname").value;
-    let description = document.getElementById("description").value;
-    await fetch("/personas", {
-        method: "POST",
-        body: new URLSearchParams({nickname, description})
-    });
-    fetchPersonas();
+    let name = document.getElementById("persona_name").value;
+    let desc = document.getElementById("persona_desc").value;
+    if(!name) return alert("닉네임 필요");
+    await fetch("/add_persona", {method:"POST", body:new URLSearchParams({name, description: desc})});
+    fetchState();
 }
 
-async function fetchUrls() {
-    let res = await fetch("/urls");
-    let data = await res.json();
-    const ul = document.getElementById("urlList");
-    ul.innerHTML = "";
-    data.forEach(u => {
-        let li = document.createElement("li");
-        li.textContent = u;
-        ul.appendChild(li);
-    });
+async function addURL() {
+    let url = document.getElementById("url_input").value;
+    if(!url) return alert("URL 필요");
+    await fetch("/add_url", {method:"POST", body:new URLSearchParams({url})});
+    fetchState();
 }
 
-async function addUrl() {
-    let url = document.getElementById("url").value;
-    await fetch("/urls", {
-        method: "POST",
-        body: new URLSearchParams({url})
-    });
-    fetchUrls();
-}
-
-async function fetchDiscussions() {
-    let res = await fetch("/discussions");
-    let data = await res.json();
-    const ul = document.getElementById("discussionList");
-    ul.innerHTML = "";
-    data.forEach(d => {
-        let li = document.createElement("li");
-        li.textContent = `[${d.persona}] ${d.message}`;
-        ul.appendChild(li);
-    });
-}
-
-// 3초마다 자동 갱신
-setInterval(fetchDiscussions, 3000);
-setInterval(fetchPersonas, 5000);
-setInterval(fetchUrls, 5000);
-
-// 초기 로드
-fetchPersonas();
-fetchUrls();
-fetchDiscussions();
+// 5초마다 상태 갱신
+setInterval(fetchState, 5000);
+fetchState();
 </script>
 </body>
 </html>
