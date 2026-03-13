@@ -1,36 +1,55 @@
-async function submitAnalysis() {
-    const url = document.getElementById("url").value;
-    const persona = document.getElementById("persona").value;
-    const comment = document.getElementById("comment").value;
+const regForm = document.getElementById("regForm");
+const personaList = document.getElementById("personaList");
+const urlList = document.getElementById("urlList");
+const discussionList = document.getElementById("discussionList");
+const dataAnalysisDiv = document.getElementById("dataAnalysis");
+const contentAnalysisDiv = document.getElementById("contentAnalysis");
 
-    if(!url || !persona) { alert("URL과 페르소나를 입력해주세요."); return; }
+regForm.addEventListener("submit", async (e) => {
+    e.preventDefault();
+    const formData = new FormData(regForm);
+    const res = await fetch("/register", { method: "POST", body: formData });
+    const data = await res.json();
+    updateLists(data);
+    regForm.reset();
+    updateAnalysis();
+});
 
-    const response = await fetch("/analyze", {
-        method: "POST",
-        headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ url, persona, comment })
+function updateLists(data) {
+    personaList.innerHTML = "";
+    urlList.innerHTML = "";
+    data.personas.forEach(p => {
+        const li = document.createElement("li");
+        li.textContent = `${p.name} (${p.desc})`;
+        personaList.appendChild(li);
     });
-    const data = await response.json();
-    document.getElementById("analysis").innerText = data.analysis;
-    loadComments();
-}
-
-async function loadComments() {
-    const response = await fetch("/comments");
-    const comments = await response.json();
-    const container = document.getElementById("comments");
-    container.innerHTML = "";
-    comments.forEach(c => {
-        const div = document.createElement("div");
-        div.className = "comment";
-        div.innerHTML = `<b>${c.persona}</b> @ ${c.timestamp}<br>URL: ${c.url}<br>코멘트: ${c.comment}<div class="analysis">${c.analysis}</div>`;
-        container.appendChild(div);
+    data.urls.forEach(u => {
+        const li = document.createElement("li");
+        li.textContent = u;
+        urlList.appendChild(li);
     });
 }
 
-function downloadRaw() {
-    window.location.href = "/download_raw";
+async function updateDiscussion() {
+    const res = await fetch("/discussions");
+    const data = await res.json();
+    discussionList.innerHTML = "";
+    data.discussions.forEach(d => {
+        const li = document.createElement("li");
+        li.textContent = d;
+        discussionList.appendChild(li);
+    });
 }
 
-// 초기 로딩
-loadComments();
+async function updateAnalysis() {
+    const res = await fetch("/analysis");
+    const data = await res.json();
+    dataAnalysisDiv.textContent = data.data_analysis;
+    contentAnalysisDiv.textContent = data.content_analysis;
+}
+
+// 20~60초 주기로 자동 업데이트
+setInterval(() => {
+    updateDiscussion();
+    updateAnalysis();
+}, 30000);  // 30초
