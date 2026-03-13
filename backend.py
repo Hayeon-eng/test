@@ -1,106 +1,101 @@
 from fastapi import FastAPI, Form
-from fastapi.responses import JSONResponse, FileResponse
-from fastapi.middleware.cors import CORSMiddleware
-import json, os, random, asyncio, tempfile
+from fastapi.responses import FileResponse, JSONResponse
+from fastapi.staticfiles import StaticFiles
+import asyncio, json, os, random, time
+from typing import List
 
 app = FastAPI()
 
-# CORS 설정 (프론트에서 접근 가능하게)
-app.add_middleware(
-    CORSMiddleware,
-    allow_origins=["*"],
-    allow_methods=["*"],
-    allow_headers=["*"]
-)
+# --- 정적 파일 서빙 ---
+app.mount("/", StaticFiles(directory=".", html=True), name="static")
 
-BASE_DIR = os.path.dirname(os.path.abspath(__file__))
-PERSONA_FILE = os.path.join(BASE_DIR, "personas.json")
-URL_FILE = os.path.join(BASE_DIR, "urls.json")
+# --- 파일 경로 ---
+PERSONAS_FILE = "personas.json"
+URLS_FILE = "urls.json"
 
-# --- 데이터 로드 ---
-def load_personas():
-    with open(PERSONA_FILE, "r", encoding="utf-8") as f:
-        return json.load(f)
+# --- 메모리 저장 ---
+personas = []
+urls = []
+discussions = []
 
-def load_urls():
-    with open(URL_FILE, "r", encoding="utf-8") as f:
-        return json.load(f)
+# --- 초기 JSON 로드 ---
+if os.path.exists(PERSONAS_FILE):
+    with open(PERSONAS_FILE, "r", encoding="utf-8") as f:
+        personas = json.load(f)
 
-# --- Mock RAG 기반 분석 ---
-def mock_analysis(persona, url):
-    """실제 RAG 없이 샘플 AI 분석 생성"""
-    return f"[{persona['nickname']} 관점] {url} 내용 기반 인사이트: 흥미로운 특징 발견됨."
+if os.path.exists(URLS_FILE):
+    with open(URLS_FILE, "r", encoding="utf-8") as f:
+        urls = json.load(f)
 
-# --- 자동 토론 상태 ---
-DISCUSSIONS = []
+# --- Helper: Mock LLM 분석 (RAG 테스트용) ---
+def analyze_url_with_persona(persona: dict, url: str):
+    # 실제 RAG 대신 mock 분석
+    data_analysis = f"[AI DATA 분석] {persona['name']} 관점에서 {url} 분석 결과"
+    content_analysis = f"[사람 CONTENT 분석] {persona['description']} 반영, 콘텐츠 시사점"
+    return data_analysis, content_analysis
 
-async def auto_discussion_loop():
+# --- Helper: 토론 생성 ---
+def generate_discussion():
+    if not personas or not urls:
+        return
+    p1, p2 = random.sample(personas, 2) if len(personas) > 1 else (personas[0], personas[0])
+    url = random.choice(urls)
+    msg1 = f"{p1['name']}: 나는 {url} 관련해서 이렇게 생각함"
+    msg2 = f"{p2['name']}: 근데 나는 {url} 이렇게 평가함, 너랑 달라"
+    msg3 = f"{p1['name']}: 아, 그럴 수 있네. 하지만 {url} 보면…"
+    discussions.extend([msg1, msg2, msg3])
+    # 최대 100개 유지
+    if len(discussions) > 100:
+        discussions[:] = discussions[-100:]
+
+# --- 자동 토론 task ---
+async def auto_discuss():
     while True:
-        personas = load_personas()
-        urls = load_urls()
-        if not personas or not urls:
-            await asyncio.sleep(10)
-            continue
-        # 랜덤 페르소나 + URL 선택
-        persona = random.choice(personas)
-        url = random.choice(urls)
-        msg = mock_analysis(persona, url)
-        DISCUSSIONS.append({"persona": persona['nickname'], "url": url, "message": msg})
-        # 최대 100개 메시지 유지
-        if len(DISCUSSIONS) > 100:
-            DISCUSSIONS.pop(0)
-        await asyncio.sleep(random.randint(20,60))  # 20~60초마다 발화
+        generate_discussion()
+        await asyncio.sleep(random.randint(20,60))
 
-# --- 백그라운드 자동 토론 시작 ---
+# --- FastAPI startup 이벤트 ---
 @app.on_event("startup")
 async def startup_event():
-    asyncio.create_task(auto_discussion_loop())
+    asyncio.create_task(auto_discuss())
 
-# --- 토론 조회 ---
-@app.get("/discussions")
-async def get_discussions():
-    return JSONResponse(DISCUSSIONS)
-
-# --- 페르소나 조회/추가 ---
-@app.get("/personas")
-async def get_personas():
-    return JSONResponse(load_personas())
-
-@app.post("/personas")
-async def add_persona(nickname: str = Form(...), description: str = Form(...)):
-    personas = load_personas()
-    # 중복 체크
-    if any(p["nickname"] == nickname for p in personas):
-        return JSONResponse({"detail": "이미 존재하는 페르소나"}, status_code=400)
-    personas.append({"nickname": nickname, "description": description})
-    with open(PERSONA_FILE, "w", encoding="utf-8") as f:
+# --- API: 페르소나 등록 ---
+@app.post("/add_persona")
+async def add_persona(name: str = Form(...), description: str = Form(...)):
+    for p in personas:
+        if p['name'] == name:
+            return {"detail": "이미 등록된 페르소나입니다."}
+    persona = {"name": name, "description": description}
+    personas.append(persona)
+    with open(PERSONAS_FILE, "w", encoding="utf-8") as f:
         json.dump(personas, f, ensure_ascii=False, indent=2)
-    return JSONResponse({"detail": "등록 완료"})
+    return {"detail": "등록 완료", "persona": persona}
 
-# --- URL 조회/추가 ---
-@app.get("/urls")
-async def get_urls():
-    return JSONResponse(load_urls())
-
-@app.post("/urls")
+# --- API: URL 등록 ---
+@app.post("/add_url")
 async def add_url(url: str = Form(...)):
-    urls = load_urls()
     if url in urls:
-        return JSONResponse({"detail": "이미 존재하는 URL"}, status_code=400)
+        return {"detail": "이미 등록된 URL입니다."}
     urls.append(url)
-    with open(URL_FILE, "w", encoding="utf-8") as f:
+    with open(URLS_FILE, "w", encoding="utf-8") as f:
         json.dump(urls, f, ensure_ascii=False, indent=2)
-    return JSONResponse({"detail": "URL 등록 완료"})
+    return {"detail": "등록 완료", "url": url}
 
-# --- Excel 다운로드 ---
-@app.get("/download_raw")
-async def download_raw():
-    import pandas as pd
-    tmp_file = os.path.join(tempfile.gettempdir(), "raw_data.xlsx")
-    df = pd.DataFrame({
-        "Persona": [d["persona"] for d in DISCUSSIONS],
-        "URL": [d["url"] for d in DISCUSSIONS],
-        "Message": [d["message"] for d in DISCUSSIONS]
-    })
-    df.to_excel(tmp_file, index=False)
-    return FileResponse(tmp_file, filename="raw_data.xlsx")
+# --- API: 현재 상태 ---
+@app.get("/state")
+async def state():
+    # 분석 결과 포함
+    data_results = []
+    content_results = []
+    for p in personas:
+        for u in urls:
+            d, c = analyze_url_with_persona(p, u)
+            data_results.append(d)
+            content_results.append(c)
+    return {
+        "personas": personas,
+        "urls": urls,
+        "discussions": discussions[-20:],  # 최근 20개만
+        "data_analysis": data_results,
+        "content_analysis": content_results
+    }
