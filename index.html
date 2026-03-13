@@ -2,36 +2,55 @@
 <html lang="ko">
 <head>
 <meta charset="UTF-8">
-<title>URL 분석기</title>
+<title>Persona 토론 시뮬레이터</title>
 <style>
-body { font-family: Arial; margin: 30px; }
-#container { max-width: 900px; margin: auto; }
-input, textarea { width: 100%; padding: 8px; margin: 5px 0; }
-button { padding: 10px 20px; margin-top: 10px; }
-#comments { margin-top: 20px; border-top: 1px solid #ccc; padding-top: 10px; }
-.comment { border-bottom: 1px solid #ddd; padding: 5px 0; }
-.analysis { background: #f0f0f0; padding: 5px; margin: 5px 0; white-space: pre-wrap; }
+body { font-family: Arial, sans-serif; padding: 20px; }
+input, textarea { width: 100%; margin: 5px 0; padding: 8px; }
+button { padding: 8px 16px; margin-top: 5px; }
+#thread { margin-top: 20px; border-top: 1px solid #ccc; padding-top: 10px; }
+.round { margin-bottom: 15px; padding: 5px; border-bottom: 1px dashed #999; }
 </style>
 </head>
 <body>
-<div id="container">
-<h1>URL 분석기</h1>
-<label>URL:</label>
-<input type="text" id="url" placeholder="URL 입력">
-<label>페르소나:</label>
-<input type="text" id="persona" placeholder="예: 분석가, UX 전문가">
-<label>코멘트 (선택):</label>
-<textarea id="comment" rows="2"></textarea>
-<button onclick="submitAnalysis()">분석하기</button>
-<button id="downloadBtn" onclick="downloadRaw()">RAW DATA DOWNLOAD</button>
 
-<h2>분석 결과</h2>
-<div id="analysis"></div>
+<h2>Persona 토론 시뮬레이터</h2>
 
-<h2>댓글 히스토리</h2>
-<div id="comments"></div>
-</div>
+<label>페르소나 특성:</label>
+<input type="text" id="persona" placeholder="애플 팬, Gen Z, 디자인 선호 등">
 
-<script src="script.js"></script>
+<label>URL/주제 (콤마 구분):</label>
+<input type="text" id="urls" placeholder="apple.com, samsung.com">
+
+<button onclick="startTalk()">토론 시작</button>
+<button onclick="downloadExcel()">Excel 다운로드</button>
+
+<div id="thread"></div>
+
+<script>
+async function startTalk(){
+    const persona = document.getElementById("persona").value;
+    const urls = document.getElementById("urls").value;
+    if(!persona || !urls){ alert("페르소나와 URL을 입력해주세요."); return; }
+
+    const formData = new FormData();
+    formData.append("persona", persona);
+    formData.append("urls", urls);
+
+    const res = await fetch("/talk", { method: "POST", body: formData });
+    const data = await res.json();
+
+    const thread = document.getElementById("thread");
+    const div = document.createElement("div");
+    div.className = "round";
+    div.innerHTML = `<b>${data.summary}</b><br>` +
+        data.round.map(r=>`<i>${r.persona}</i> @ ${r.url}: ${r.comment} | Insight: ${r.insight}`).join("<br>");
+    thread.prepend(div);
+}
+
+function downloadExcel(){
+    window.location.href = "/download_raw";
+}
+</script>
+
 </body>
 </html>
