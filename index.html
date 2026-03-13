@@ -2,80 +2,72 @@
 <html lang="ko">
 <head>
 <meta charset="UTF-8">
-<title>RAG 토론 테스트</title>
+<title>AI 토론 플랫폼</title>
 <style>
-body { font-family: Arial; margin: 20px; }
-input, textarea { width: 300px; margin-bottom: 10px; }
-button { margin-top: 10px; }
-#discussion { border:1px solid #ccc; padding:10px; height:200px; overflow-y:scroll; }
-.analysis { border:1px solid #aaa; margin-top:10px; padding:10px; }
+body { font-family: Arial; padding: 20px; }
+h2 { margin-top: 20px; }
+textarea, input { width: 400px; margin: 5px 0; }
+button { margin: 5px; }
+#discussion { border: 1px solid #ccc; padding: 10px; max-height: 300px; overflow-y: auto; }
 </style>
 </head>
 <body>
-<h2>페르소나 + URL 입력</h2>
-<input id="persona" placeholder="Persona 설명">
-<textarea id="urls" placeholder="URL 여러개 , 로 구분"></textarea><br>
-<button onclick="register()">등록</button>
+<h1>AI 자동 토론 & 분석</h1>
 
-<h3>등록된 페르소나/URL</h3>
-<select id="persona_list" size="5" style="width:400px;"></select>
+<h2>페르소나 등록</h2>
+<input id="persona_name" placeholder="이름"/>
+<input id="persona_desc" placeholder="설명"/>
+<button onclick="addPersona()">등록</button>
+<div id="persona_list"></div>
 
-<h3>분석 결과</h3>
-<div id="analysis"></div>
+<h2>URL 등록</h2>
+<input id="url_input" placeholder="https://"/>
+<button onclick="addURL()">등록</button>
+<div id="url_list"></div>
 
-<h3>자동 토론</h3>
+<h2>분석 & 토론</h2>
+<button onclick="analyze()">분석 시작</button>
+<div id="data_summary"></div>
+<div id="content_summary"></div>
+<h3>토론</h3>
 <div id="discussion"></div>
 
 <script>
-async function register(){
-    let persona = document.getElementById('persona').value;
-    let urls = document.getElementById('urls').value;
-    if(!persona || !urls) return alert("둘다 입력 필요");
-    await fetch("/register", {
-        method:"POST",
-        body:new URLSearchParams({persona, urls})
-    });
-    document.getElementById('persona').value='';
-    document.getElementById('urls').value='';
-    loadPersonas();
+async function addPersona(){
+    const name = document.getElementById("persona_name").value;
+    const desc = document.getElementById("persona_desc").value;
+    const res = await fetch("/add_persona", {
+        method: "POST",
+        body: new URLSearchParams({name, description: desc})
+    }).then(r=>r.json());
+    renderPersonas(res.personas);
+}
+function renderPersonas(personas){
+    document.getElementById("persona_list").innerHTML = personas.map(p=>p.name + " - " + p.description).join("<br>");
 }
 
-async function loadPersonas(){
-    let res = await fetch("/analyze");
-    let data = await res.json();
-    let sel = document.getElementById('persona_list');
-    sel.innerHTML='';
-    data.results.forEach(e=>{
-        let opt = document.createElement('option');
-        opt.text = `${e.persona} - ${e.urls.join(', ')}`;
-        sel.add(opt);
-    });
-    displayAnalysis(data.results);
-    displayDiscussion(data.discussion_log);
+async function addURL(){
+    const url = document.getElementById("url_input").value;
+    const res = await fetch("/add_url", {
+        method: "POST",
+        body: new URLSearchParams({url})
+    }).then(r=>r.json());
+    renderURLs(res.urls);
+}
+function renderURLs(urls){
+    document.getElementById("url_list").innerHTML = urls.join("<br>");
 }
 
-function displayAnalysis(results){
-    let container = document.getElementById('analysis');
-    container.innerHTML='';
-    results.forEach(e=>{
-        let div = document.createElement('div');
-        div.className='analysis';
-        div.innerHTML=`<strong>${e.persona}</strong><br>
-        <em>Data 분석:</em> ${e.data_analysis}<br>
-        <em>Content 분석:</em> ${e.content_analysis}`;
-        container.appendChild(div);
-    });
+async function analyze(){
+    const persona_name = document.getElementById("persona_name").value;
+    const res = await fetch("/analyze", {
+        method: "POST",
+        body: new URLSearchParams({persona_name})
+    }).then(r=>r.json());
+    document.getElementById("data_summary").innerText = res.data_summary;
+    document.getElementById("content_summary").innerText = res.content_summary;
+    document.getElementById("discussion").innerHTML = res.discussion.join("<br>");
 }
-
-function displayDiscussion(log){
-    let div = document.getElementById('discussion');
-    div.innerHTML = log.map(l=>`<div>${l}</div>`).join('');
-    div.scrollTop = div.scrollHeight;
-}
-
-// 5초마다 새로고침
-setInterval(loadPersonas, 5000);
-loadPersonas();
 </script>
 </body>
 </html>
