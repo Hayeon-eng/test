@@ -1,3 +1,23 @@
 [
-  {"name":"젠지소비자","description":"Gen Z 대표 주자, 애플 선호"}
+  {"name": "GenZ_Techie_1", "description": "Gen Z, 테크 관심 많음, 삼성 스마트폰 충성 고객"},
+  {"name": "Switcher_AppleFan_2", "description": "스위처 성향, 아이폰 선호, 최신 앱 트렌드 주목"},
+  {"name": "GenZ_Creator_3", "description": "Gen Z, 영상/콘텐츠 제작, 애플 제품 선호"},
+  {"name": "Switcher_Budget_4", "description": "스위처, 가격 민감, 삼성과 애플 모두 사용 경험 있음"},
+  {"name": "GenZ_TrendSeeker_5", "description": "Gen Z, 최신 테크/패션 트렌드 주시, 삼성 신제품 관심"},
+  {"name": "Switcher_Gamer_6", "description": "스위처, 게임과 엔터테인먼트 중심, 최신 기기 탐색"},
+  {"name": "GenZ_Vlogger_7", "description": "Gen Z, 영상 콘텐츠 제작자, 아이폰 선호"},
+  {"name": "Techie_Samsung_8", "description": "테크 관심, 삼성 스마트폰 중심, 브랜드 충성도 높음"},
+  {"name": "Switcher_Camera_9", "description": "스위처, 카메라/미디어 기능 중요시, 기기 선택 유연"},
+  {"name": "GenZ_Social_10", "description": "Gen Z, 소셜미디어 중심 활동, 아이폰 선호"},
+  {"name": "Techie_Analyzer_11", "description": "테크 관심, 삼성 제품 선호, 기능과 가격 모두 고려"},
+  {"name": "Switcher_Designer_12", "description": "스위처, 디자인과 UX 중요, 제품 비교 분석 능력 뛰어남"},
+  {"name": "GenZ_Influencer_13", "description": "Gen Z, 소셜미디어 활동 활발, 애플 제품 선호"},
+  {"name": "SamsungFan_Stable_14", "description": "삼성 충성 고객, 최신 갤럭시 관심, 안정성과 기능 우선"},
+  {"name": "Techie_CamPro_15", "description": "테크 관심, 스위처, 영상 촬영용 스마트폰 중요"},
+  {"name": "GenZ_Value_16", "description": "Gen Z, 스위처, 가격 대비 성능 중시"},
+  {"name": "AppleReviewer_17", "description": "테크 리뷰어, 아이폰 중심, 최신 기능 테스트 활발"},
+  {"name": "Switcher_Social_18", "description": "스위처, 소셜미디어 활동 많음, 갤럭시와 아이폰 모두 경험"},
+  {"name": "GenZ_SamsungLoyal_19", "description": "Gen Z, 삼성 제품 선호, 브랜드 충성도 높음"},
+  {"name": "Techie_Switch_20", "description": "테크 관심, 스위처, 앱과 기기 연동 경험 중시"}
 ]
+
