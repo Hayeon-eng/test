@@ -60,7 +60,7 @@ async function analyze() {
         trait: document.getElementById("personaTrait").value || "neutral"
     };
 
-    const response = await fetch("http://localhost:8000/analyze", {
+    const response = await fetch("https://test-76hq.onrender.com/analyze", {
         method: "POST",
         headers: {"Content-Type": "application/json"},
         body: JSON.stringify({type, content, persona})
