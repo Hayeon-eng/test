@@ -2,85 +2,40 @@
 <html lang="ko">
 <head>
     <meta charset="UTF-8">
-    <title>자동 AI 토론장</title>
-    <style>
-        body { font-family: Arial; padding: 20px; }
-        #chat { border:1px solid #ccc; padding:10px; height:300px; overflow:auto; margin-bottom:10px; }
-        #log { margin-top:20px; }
-        input, textarea { width:100%; margin-bottom:5px; padding:5px; }
-        button { padding:5px 10px; }
-        .persona { font-weight:bold; color: #2a7ae2; }
-    </style>
+    <title>자동 토론 플랫폼</title>
+    <link rel="stylesheet" href="style.css">
 </head>
 <body>
-    <h1>자동 AI 토론장</h1>
+    <h1>자동 토론 플랫폼</h1>
 
-    <h3>페르소나 & URL 등록</h3>
-    <input id="persona" placeholder="페르소나 이름">
-    <input id="persona_desc" placeholder="페르소나 특성 설명">
-    <input id="urls" placeholder="URL 입력 (콤마로 구분)">
-    <button onclick="register()">등록</button>
+    <div id="registration">
+        <h2>페르소나 & URL 등록</h2>
+        <form id="regForm">
+            <input type="text" name="persona" placeholder="페르소나 이름" required>
+            <input type="text" name="persona_desc" placeholder="페르소나 특성" required>
+            <input type="url" name="url" placeholder="URL 입력" required>
+            <button type="submit">등록</button>
+        </form>
+    </div>
 
-    <h3>등록된 페르소나/URL</h3>
-    <div id="lists"></div>
+    <div id="lists">
+        <h3>등록된 페르소나</h3>
+        <ul id="personaList"></ul>
+        <h3>등록된 URL</h3>
+        <ul id="urlList"></ul>
+    </div>
 
-    <h3>분석 결과</h3>
-    <div id="analysis"></div>
+    <div id="analysis">
+        <h2>분석 결과</h2>
+        <div id="dataAnalysis"></div>
+        <div id="contentAnalysis"></div>
+    </div>
 
-    <h3>자동 토론</h3>
-    <div id="chat"></div>
+    <div id="discussions">
+        <h2>자동 토론</h2>
+        <ul id="discussionList"></ul>
+    </div>
 
-    <script>
-        async function register(){
-            const persona = document.getElementById("persona").value;
-            const desc = document.getElementById("persona_desc").value;
-            const urls = document.getElementById("urls").value;
-            const formData = new FormData();
-            formData.append("persona", persona);
-            formData.append("persona_desc", desc);
-            formData.append("urls", urls);
-
-            const res = await fetch("/register", {method:"POST", body:formData});
-            const data = await res.json();
-            renderLists(data.personas, data.urls);
-            document.getElementById("persona").value = "";
-            document.getElementById("persona_desc").value = "";
-            document.getElementById("urls").value = "";
-        }
-
-        function renderLists(personas, urls){
-            let html = "<strong>Personas:</strong><ul>";
-            personas.forEach(p=>{ html+= `<li>${p.persona} (${p.desc})</li>` });
-            html+="</ul><strong>URLs:</strong><ul>";
-            urls.forEach(u=>{ html+= `<li>${u}</li>` });
-            html+="</ul>";
-            document.getElementById("lists").innerHTML = html;
-        }
-
-        async function fetchAnalysis(){
-            const res = await fetch("/analyze");
-            const data = await res.json();
-            let html = "<strong>Data 분석:</strong><ul>";
-            data.data_summary.forEach(d=>{ html+= `<li>${d}</li>` });
-            html+="</ul><strong>Content 분석:</strong><ul>";
-            data.content_summary.forEach(d=>{ html+= `<li>${d}</li>` });
-            html+="</ul>";
-            document.getElementById("analysis").innerHTML = html;
-        }
-
-        async function fetchChatLog(){
-            const res = await fetch("/chat_log");
-            const data = await res.json();
-            let html = "";
-            data.chat_log.forEach(m=>{
-                html += `<div class="persona">${m}</div>`;
-            });
-            document.getElementById("chat").innerHTML = html;
-            document.getElementById("chat").scrollTop = document.getElementById("chat").scrollHeight;
-        }
-
-        setInterval(fetchChatLog, 5000); // 5초마다 업데이트
-        setInterval(fetchAnalysis, 15000); // 15초마다 분석 업데이트
-    </script>
+    <script src="script.js"></script>
 </body>
 </html>
