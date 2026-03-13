@@ -1,120 +1,102 @@
 <!DOCTYPE html>
-<html lang="ko">
+<html lang="en">
 <head>
 <meta charset="UTF-8">
-<title>AI 인사이트 툴 v1.2</title>
+<title>AI Insight Tool v1.3</title>
 <style>
-body { font-family: Arial; margin: 20px; }
-textarea, input { width: 100%; margin-bottom: 10px; }
-#output { border: 1px solid #ccc; padding: 10px; margin-top: 20px; display:flex; }
-.section { margin-bottom: 20px; padding:10px; border:1px solid #eee; }
-#comments { max-height:200px; overflow-y:auto; border:1px solid #ccc; padding:5px; }
-button { margin:5px 0; }
-#downloadBtn { float:right; }
+body { font-family: Arial, sans-serif; margin: 20px; }
+.container { display: flex; gap: 20px; }
+.section { border: 1px solid #ccc; padding: 10px; width: 45%; height: 400px; overflow-y: auto; }
+.comment-section { border: 1px solid #ccc; padding: 10px; margin-top: 20px; height: 200px; overflow-y: auto; }
+input, select, button { margin: 5px; }
+#downloadBtn { position: fixed; top: 20px; right: 20px; }
 </style>
 </head>
 <body>
-<h1>AI 소비자 인사이트 툴 v1.2</h1>
+<h1>AI Insight Tool v1.3</h1>
 
-<button id="downloadBtn" onclick="downloadRaw()">RAW DATA DOWNLOAD</button>
-
-<div class="section">
-<label>콘텐츠 유형:</label>
-<select id="contentType">
-<option value="text">텍스트</option>
-<option value="url">URL</option>
-<option value="youtube">YouTube</option>
-</select>
-<textarea id="content" rows="3" placeholder="텍스트 또는 URL 입력"></textarea>
+<!-- 입력 -->
+<div>
+    <select id="inputType">
+        <option value="text">Text</option>
+        <option value="url">URL</option>
+        <option value="youtube">YouTube</option>
+    </select>
+    <input type="text" id="inputContent" placeholder="Enter content, URL, or YouTube link" size="60"/>
+    <input type="text" id="personaName" placeholder="Persona Name"/>
+    <input type="text" id="personaTrait" placeholder="Persona Trait"/>
+    <button onclick="analyze()">Analyze</button>
 </div>
 
-<div class="section">
-<label>페르소나 이름:</label>
-<input type="text" id="personaName" placeholder="이름">
-<label>성격/특성:</label>
-<input type="text" id="personaTrait" placeholder="예: 분석적, 창의적">
-<button onclick="analyze()">분석 시작</button>
+<!-- RAW 다운로드 -->
+<button id="downloadBtn" onclick="window.location.href='http://localhost:8000/download_raw'">RAW DATA DOWNLOAD</button>
+
+<!-- 분석 섹션 -->
+<div class="container">
+    <div class="section" id="dataSection">
+        <h3>Data Insights (AI)</h3>
+        <div id="dataContent"></div>
+    </div>
+    <div class="section" id="contentSection">
+        <h3>Content Insights (Persona)</h3>
+        <div id="contentContent"></div>
+    </div>
 </div>
 
-<div id="output">
-<div id="dataSection" class="section" style="flex:1">
-<h3>데이터 측면 인사이트</h3>
-<pre id="dataInsights"></pre>
-</div>
-<div id="contentSection" class="section" style="flex:1">
-<h3>콘텐츠 측면 인사이트</h3>
-<pre id="contentInsights"></pre>
-</div>
-</div>
-
-<div class="section">
-<h3>댓글</h3>
-<textarea id="commentInput" rows="2" placeholder="댓글 입력"></textarea>
-<button onclick="addComment()">댓글 추가</button>
-<div id="comments"></div>
+<!-- 댓글 영역 -->
+<div class="comment-section">
+    <h3>Comments</h3>
+    <div id="commentsDisplay"></div>
+    <input type="text" id="newComment" placeholder="Add comment"/>
+    <button onclick="addComment()">Add</button>
 </div>
 
 <script>
-let rawData = {};
+async function analyze() {
+    const type = document.getElementById("inputType").value;
+    const content = document.getElementById("inputContent").value;
+    const persona = {
+        name: document.getElementById("personaName").value || "Default",
+        trait: document.getElementById("personaTrait").value || "neutral"
+    };
 
-async function analyze(){
-    const type = document.getElementById("contentType").value;
-    const content = document.getElementById("content").value;
-    const personaName = document.getElementById("personaName").value;
-    const personaTrait = document.getElementById("personaTrait").value;
-
-    const response = await fetch("http://localhost:8000/analyze",{
-        method:"POST",
-        headers:{"Content-Type":"application/json"},
-        body: JSON.stringify({
-            type:type, content:content,
-            persona:{name:personaName, trait:personaTrait}
-        })
+    const response = await fetch("http://localhost:8000/analyze", {
+        method: "POST",
+        headers: {"Content-Type": "application/json"},
+        body: JSON.stringify({type, content, persona})
     });
     const data = await response.json();
-    rawData = data;
-    document.getElementById("dataInsights").innerText = JSON.stringify(data.analysis.data_insights,null,2);
-    document.getElementById("contentInsights").innerText = JSON.stringify(data.analysis.content_summary,null,2);
 
-    updateComments(data.comments);
+    document.getElementById("dataContent").innerText = data.analysis.data_insights;
+    document.getElementById("contentContent").innerText = data.analysis.content_summary;
+
+    // 댓글 초기화
+    displayComments(data.comments);
 }
 
-async function addComment(){
-    const comment = document.getElementById("commentInput").value;
-    const response = await fetch("http://localhost:8000/comment",{
-        method:"POST",
-        headers:{"Content-Type":"application/json"},
-        body: JSON.stringify({comment})
+async function addComment() {
+    const commentText = document.getElementById("newComment").value;
+    if (!commentText) return;
+    const response = await fetch("http://localhost:8000/comment", {
+        method: "POST",
+        headers: {"Content-Type": "application/json"},
+        body: JSON.stringify({comment: commentText})
     });
     const data = await response.json();
-    rawData.comments = data.comments;
-    updateComments(data.comments);
-    document.getElementById("commentInput").value = "";
+    displayComments(data.comments);
+    document.getElementById("newComment").value = "";
 }
 
-function updateComments(comments){
-    const div = document.getElementById("comments");
-    div.innerHTML = "";
-    comments.forEach(c=>{
-        const el = document.createElement("div");
-        el.style.borderBottom="1px solid #ddd";
-        el.style.padding="5px 0";
-        el.innerHTML = `<b>댓글:</b> ${c.text}<br>
-                        <b>감정:</b> ${c.sentiment}<br>
-                        <b>키워드:</b> ${c.keywords.join(", ")}<br>
-                        <b>요약:</b> ${c.summary}`;
-        div.appendChild(el);
+function displayComments(comments) {
+    const container = document.getElementById("commentsDisplay");
+    container.innerHTML = "";
+    comments.forEach(c => {
+        const div = document.createElement("div");
+        div.style.borderBottom = "1px solid #ddd";
+        div.style.marginBottom = "5px";
+        div.innerHTML = `<strong>${c.sentiment}</strong> | Keywords: ${c.keywords.join(", ")}<br>${c.summary}`;
+        container.appendChild(div);
     });
-}
-
-function downloadRaw(){
-    const blob = new Blob([JSON.stringify(rawData,null,2)],{type:"application/json"});
-    const url = URL.createObjectURL(blob);
-    const a = document.createElement("a");
-    a.href = url;
-    a.download = "raw_data.json";
-    a.click();
-    URL.revokeObjectURL(url);
 }
 </script>
 </body>
