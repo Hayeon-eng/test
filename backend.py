@@ -1,21 +1,32 @@
-from fastapi import FastAPI, WebSocket, Form
+from fastapi import FastAPI, Form, Request
 from fastapi.responses import FileResponse, JSONResponse
 from fastapi.staticfiles import StaticFiles
-import asyncio, random, os, tempfile, pandas as pd
+from fastapi.middleware.cors import CORSMiddleware
+import os
+import tempfile
+import pandas as pd
+import asyncio
+import random
+import time
 
 app = FastAPI()
+
+# --- CORS 허용 ---
+app.add_middleware(
+    CORSMiddleware,
+    allow_origins=["*"],
+    allow_methods=["*"],
+    allow_headers=["*"]
+)
+
+# --- 정적 파일 경로 ---
 BASE_DIR = os.path.dirname(os.path.abspath(__file__))
 app.mount("/static", StaticFiles(directory=BASE_DIR), name="static")
 
-# --- 페르소나 & URL 저장 ---
-personas = []
-urls = []
-
-# --- 토론 로그 ---
-discussion_log = []
-
-# --- WebSocket 연결 ---
-connected_websockets = []
+# --- 인메모리 DB (테스트용) ---
+PERSONAS = []
+URLS = []
+CHAT_LOG = []
 
 # --- 메인 페이지 ---
 @app.get("/")
@@ -25,82 +36,47 @@ async def root():
         return FileResponse(index_path)
     return JSONResponse({"detail": "index.html not found"}, status_code=404)
 
-# --- 페르소나 입력 ---
-@app.post("/add_persona")
-async def add_persona(persona: str = Form(...)):
-    if persona not in personas:
-        personas.append(persona)
-    return {"personas": personas}
+# --- 페르소나 & URL 등록 ---
+@app.post("/register")
+async def register(persona: str = Form(...), persona_desc: str = Form(...), urls: str = Form(...)):
+    urls_list = [u.strip() for u in urls.split(",") if u.strip() != ""]
+    
+    # 중복 제거
+    for u in urls_list:
+        if u not in URLS:
+            URLS.append(u)
+    if persona not in PERSONAS:
+        PERSONAS.append({"persona": persona, "desc": persona_desc})
+    return {"status": "ok", "personas": PERSONAS, "urls": URLS}
 
-# --- URL 입력 ---
-@app.post("/add_url")
-async def add_url(url: str = Form(...)):
-    if url not in urls:
-        urls.append(url)
-    return {"urls": urls}
-
-# --- Data/Content 분석 + 토론 라운드 ---
-async def generate_round():
+# --- 자동 토론 시뮬레이션 ---
+async def auto_talk():
     while True:
-        if not personas or not urls:
-            await asyncio.sleep(5)
-            continue
-        
-        persona = random.choice(personas)
-        url = random.choice(urls)
-        
-        # --- 샘플 분석 ---
-        data_analysis = f"[AI DATA 분석] {persona} 관점에서 {url} 분석 완료"
-        content_analysis = f"[사람 CONTENT 분석] {persona} 관점에서 시사점 요약"
-        
-        # --- 샘플 토론 발화 ---
-        prev = discussion_log[-1]["text"] if discussion_log else ""
-        debate_text = f"{persona}: {url} 관련, 내 의견은 '{prev} + 새로운 인사이트' 입니다."
-        
-        round_data = {
-            "persona": persona,
-            "url": url,
-            "data_analysis": data_analysis,
-            "content_analysis": content_analysis,
-            "text": debate_text
-        }
-        discussion_log.append(round_data)
-        
-        # --- WebSocket 브로드캐스트 ---
-        for ws in connected_websockets:
-            await ws.send_json(round_data)
-        
-        await asyncio.sleep(random.randint(20, 60))  # 20~60초 간격
+        if PERSONAS and URLS:
+            # 랜덤 페르소나, URL 선택
+            persona = random.choice(PERSONAS)
+            url = random.choice(URLS)
+            msg = f"{persona['persona']} 관점: {url} 관련 이렇게 생각함. 인사이트: {random.choice(['디자인 좋아요', '가격 대비 효율적', '사용자 경험 개선 필요'])}"
+            CHAT_LOG.append(msg)
+            if len(CHAT_LOG) > 50:
+                CHAT_LOG.pop(0)
+        await asyncio.sleep(random.randint(20,60))
 
-# --- WebSocket 연결 ---
-@app.websocket("/ws")
-async def websocket_endpoint(ws: WebSocket):
-    await ws.accept()
-    connected_websockets.append(ws)
-    
-    # 접속 시 기존 로그 전송
-    for msg in discussion_log:
-        await ws.send_json(msg)
-    
-    try:
-        while True:
-            await ws.receive_text()  # 클라이언트 유지용
-    except:
-        connected_websockets.remove(ws)
-
-# --- Excel 다운로드 ---
-@app.get("/download_raw")
-async def download_raw():
-    tmp_file = os.path.join(tempfile.gettempdir(), "raw_data.xlsx")
-    df = pd.DataFrame({
-        "Persona": personas or ["샘플 페르소나"],
-        "URL": urls or ["샘플 URL"],
-        "Discussion": [d["text"] for d in discussion_log] or ["샘플 토론"]
-    })
-    df.to_excel(tmp_file, index=False)
-    return FileResponse(tmp_file, filename="raw_data.xlsx")
-
-# --- 백그라운드 자동 라운드 시작 ---
+# --- 서버 시작시 자동 토론 백그라운드 ---
 @app.on_event("startup")
 async def startup_event():
-    asyncio.create_task(generate_round())
+    asyncio.create_task(auto_talk())
+
+# --- 토론 로그 조회 ---
+@app.get("/chat_log")
+async def get_chat_log():
+    return {"chat_log": CHAT_LOG}
+
+# --- 분석 ---
+@app.get("/analyze")
+async def analyze():
+    # Data 분석: AI 기반 URL 분석
+    data_summary = [f"[AI DATA 분석] {url} 관련 인사이트: {random.choice(['트렌디', '가격 경쟁력 있음', 'UI/UX 개선 필요'])}" for url in URLS]
+    # Content 분석: 사람 관점
+    content_summary = [f"[사람 CONTENT 분석] {p['persona']} ({p['desc']}) 관점 시사점: {random.choice(['흥미롭다', '경쟁사 대비 강점 있음', '개선 필요'])}" for p in PERSONAS]
+    return {"data_summary": data_summary, "content_summary": content_summary}
