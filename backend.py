@@ -1,3 +1,15 @@
+from fastapi.staticfiles import StaticFiles
+import os
+
+# frontend.html 위치 확인
+if not os.path.exists("static"):
+    os.makedirs("static")
+import shutil
+shutil.copy("frontend.html", "static/frontend.html")
+
+app.mount("/", StaticFiles(directory="static", html=True), name="static")
+
+
 from fastapi import FastAPI, Request
 from fastapi.middleware.cors import CORSMiddleware
 from fastapi.responses import JSONResponse
