@@ -1,56 +1,70 @@
 <!DOCTYPE html>
 <html lang="ko">
 <head>
-<meta charset="UTF-8">
-<title>Persona 토론 시뮬레이터</title>
-<style>
-body { font-family: Arial, sans-serif; padding: 20px; }
-input, textarea { width: 100%; margin: 5px 0; padding: 8px; }
-button { padding: 8px 16px; margin-top: 5px; }
-#thread { margin-top: 20px; border-top: 1px solid #ccc; padding-top: 10px; }
-.round { margin-bottom: 15px; padding: 5px; border-bottom: 1px dashed #999; }
-</style>
+  <meta charset="UTF-8">
+  <title>AI 토론 시뮬레이터</title>
+  <style>
+    body { font-family: Arial; margin: 20px; }
+    input, textarea { width: 100%; margin-bottom: 10px; }
+    .section { margin-top: 20px; }
+    .topic { border: 1px solid #ccc; padding: 10px; margin-top: 10px; }
+  </style>
 </head>
 <body>
+  <h1>페르소나 & URL 등록</h1>
+  <form id="topicForm">
+    <input type="text" id="persona" placeholder="페르소나 이름" required>
+    <textarea id="persona_desc" placeholder="페르소나 설명 (특성, 선호 등)" rows="2"></textarea>
+    <textarea id="urls" placeholder="URL 입력 (쉼표로 구분)" rows="2"></textarea>
+    <button type="submit">등록</button>
+  </form>
 
-<h2>Persona 토론 시뮬레이터</h2>
+  <div class="section">
+    <h2>토론 시뮬레이션</h2>
+    <button id="simulateBtn">시뮬레이션 진행</button>
+    <div id="results"></div>
+  </div>
 
-<label>페르소나 특성:</label>
-<input type="text" id="persona" placeholder="애플 팬, Gen Z, 디자인 선호 등">
+  <div class="section">
+    <h2>Excel 다운로드</h2>
+    <button id="downloadBtn">다운로드</button>
+  </div>
 
-<label>URL/주제 (콤마 구분):</label>
-<input type="text" id="urls" placeholder="apple.com, samsung.com">
+  <script>
+    const form = document.getElementById('topicForm');
+    const resultsDiv = document.getElementById('results');
 
-<button onclick="startTalk()">토론 시작</button>
-<button onclick="downloadExcel()">Excel 다운로드</button>
+    form.addEventListener('submit', async (e) => {
+      e.preventDefault();
+      const persona = document.getElementById('persona').value;
+      const persona_desc = document.getElementById('persona_desc').value;
+      const urls = document.getElementById('urls').value;
 
-<div id="thread"></div>
+      await fetch('/add_topic', {
+        method: 'POST',
+        body: new URLSearchParams({ persona, persona_desc, urls })
+      });
+      alert("등록 완료!");
+      form.reset();
+    });
 
-<script>
-async function startTalk(){
-    const persona = document.getElementById("persona").value;
-    const urls = document.getElementById("urls").value;
-    if(!persona || !urls){ alert("페르소나와 URL을 입력해주세요."); return; }
+    document.getElementById('simulateBtn').addEventListener('click', async () => {
+      const res = await fetch('/simulate_rounds');
+      const data = await res.json();
+      resultsDiv.innerHTML = '';
+      data.results.forEach(r => {
+        const div = document.createElement('div');
+        div.classList.add('topic');
+        div.innerHTML = `<strong>Data 분석:</strong> ${r.data}<br>
+                         <strong>Content 분석:</strong> ${r.content}<br>
+                         <strong>토론 예시:</strong><br>${r.discussion.join('<br>')}`;
+        resultsDiv.appendChild(div);
+      });
+    });
 
-    const formData = new FormData();
-    formData.append("persona", persona);
-    formData.append("urls", urls);
-
-    const res = await fetch("/talk", { method: "POST", body: formData });
-    const data = await res.json();
-
-    const thread = document.getElementById("thread");
-    const div = document.createElement("div");
-    div.className = "round";
-    div.innerHTML = `<b>${data.summary}</b><br>` +
-        data.round.map(r=>`<i>${r.persona}</i> @ ${r.url}: ${r.comment} | Insight: ${r.insight}`).join("<br>");
-    thread.prepend(div);
-}
-
-function downloadExcel(){
-    window.location.href = "/download_raw";
-}
-</script>
-
+    document.getElementById('downloadBtn').addEventListener('click', () => {
+      window.location.href = '/download_raw';
+    });
+  </script>
 </body>
 </html>
