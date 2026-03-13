@@ -34,7 +34,11 @@ if not os.path.exists(DB_FILE):
     conn.close()
 
 # 정적파일
-app.mount("/", StaticFiles(directory=".", html=True), name="static")
+app.mount("/static", StaticFiles(directory=".", html=False), name="static")
+
+@app.get("/")
+async def root():
+    return FileResponse(os.path.join(os.path.dirname(__file__), "index.html"))
 
 # 댓글/URL 저장
 @app.post("/analyze")
