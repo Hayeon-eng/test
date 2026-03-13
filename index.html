@@ -2,66 +2,60 @@
 <html lang="ko">
 <head>
 <meta charset="UTF-8">
-<title>자동 토론 플랫폼</title>
+<title>AI 자동 토론 플랫폼</title>
 <style>
 body { font-family: Arial; padding: 20px; }
-#discussion { border:1px solid #ccc; padding:10px; height:300px; overflow:auto; }
-input, button { margin:5px; }
+#discussion { border: 1px solid #ccc; height: 300px; overflow-y: scroll; padding: 10px; }
+input, button { margin: 5px 0; }
 </style>
 </head>
 <body>
-<h2>URL 등록</h2>
-<input type="text" id="url_input" placeholder="URL 입력">
-<button onclick="registerUrl()">등록</button>
+<h2>페르소나 관리</h2>
+<input id="persona_name" placeholder="이름"/>
+<input id="persona_desc" placeholder="설명"/>
+<button onclick="addPersona()">페르소나 추가</button>
+<ul id="persona_list"></ul>
 
-<h2>페르소나 등록</h2>
-<input type="text" id="persona_name" placeholder="이름">
-<input type="text" id="persona_desc" placeholder="설명">
-<button onclick="registerPersona()">등록</button>
+<h2>URL 관리</h2>
+<input id="url_input" placeholder="URL"/>
+<button onclick="addURL()">URL 추가</button>
+<ul id="url_list"></ul>
 
-<h2>등록 리스트</h2>
-<div id="lists">
-<p><strong>URLs:</strong> <span id="url_list"></span></p>
-<p><strong>Personas:</strong> <span id="persona_list"></span></p>
-</div>
-
-<h2>실시간 토론</h2>
+<h2>토론</h2>
 <div id="discussion"></div>
 
 <script>
-const ws = new WebSocket(`ws://${location.host}/ws`);
-
+let ws = new WebSocket(`ws://${location.host}/ws/discuss`);
 ws.onmessage = (event) => {
-    const msg = JSON.parse(event.data);
-    const div = document.getElementById("discussion");
-    div.innerHTML += `<p><strong>${msg.persona}</strong>: ${msg.discussion}<br>
-                      <em>${msg.data_analysis}</em><br>
-                      <em>${msg.content_analysis}</em></p>`;
-    div.scrollTop = div.scrollHeight;
+    let data = JSON.parse(event.data);
+    let div = document.createElement("div");
+    div.textContent = `[${data.persona}] ${data.comment}`;
+    document.getElementById("discussion").appendChild(div);
 };
 
-async function fetchData() {
-    const res = await fetch("/get_data");
-    const data = await res.json();
-    document.getElementById("url_list").innerText = data.urls.join(", ");
-    document.getElementById("persona_list").innerText = data.personas.map(p=>p.name).join(", ");
+async function addPersona() {
+    let name = document.getElementById("persona_name").value;
+    let desc = document.getElementById("persona_desc").value;
+    let res = await fetch("/add_persona", {method:"POST", body:new URLSearchParams({name, description: desc})});
+    let data = await res.json();
+    updatePersonaList(data.personas);
 }
-fetchData();
-
-async function registerUrl() {
-    const url = document.getElementById("url_input").value;
-    await fetch("/register_url", {method:"POST", body:new URLSearchParams({url})});
-    document.getElementById("url_input").value="";
-    fetchData();
+function updatePersonaList(list) {
+    let ul = document.getElementById("persona_list");
+    ul.innerHTML = "";
+    list.forEach(p => { let li=document.createElement("li"); li.textContent=p.name + " - " + p.description; ul.appendChild(li); });
 }
 
-async function registerPersona() {
-    const name = document.getElementById("persona_name").value;
-    const desc = document.getElementById("persona_desc").value;
-    await fetch("/register_persona", {method:"POST", body:new URLSearchParams({name, description:desc})});
-    document.getElementById("persona_name").value="";
-    document.getElementById("persona_desc").value="";
-    fetchData();
+async function addURL() {
+    let url = document.getElementById("url_input").value;
+    let res = await fetch("/add_url", {method:"POST", body:new URLSearchParams({url})});
+    let data = await res.json();
+    updateURLList(data.urls);
+}
+function updateURLList(list) {
+    let ul = document.getElementById("url_list");
+    ul.innerHTML = "";
+    list.forEach(u => { let li=document.createElement("li"); li.textContent=u; ul.appendChild(li); });
 }
 </script>
 </body>
